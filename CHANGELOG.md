@@ -4,7 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
-- **Reviews:** comment on a Markdown file or an agent's last answer in Herdr and send the comments back, a native replacement for `plannotator annotate` and `plannotator last` ([#1](https://github.com/jslowack/herdr-ranch/issues/1)). Block comments, general comments, screenshots and 👍, with Plannotator's feedback text. The `ranch-review` CLI and the `/ranch-annotate` and `/ranch-last` skills, linked by `install.sh`. This space or All; the cog sets opening at once or notifying only, and how many sent reviews show. Cmd+Shift+I opens it.
+- **Reviews:** comment on a Markdown file or an agent's last answer in Herdr and send the comments back, a native replacement for `plannotator annotate` and `plannotator last` ([#1](https://github.com/jslowack/herdr-ranch/issues/1)). Block comments, general comments, screenshots and 👍, with Plannotator's feedback text. The `ranch-review` CLI and the `/herdr-ranch-annotate` and `/herdr-ranch-last` skills, linked by `install.sh`. This space or All; the cog sets opening at once or notifying only, and how many sent reviews show. Cmd+Shift+I opens it.
 - **Removed: Inbox** (Plannotator's sessions) and **Review in Plannotator** on a pull request. Reviews replaces them; `install.sh` removes the old Inbox link.
 
 ## v0.1.0

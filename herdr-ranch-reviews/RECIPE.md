@@ -32,7 +32,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 
 ## How it behaves
 
-- **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/ranch-annotate` and `/ranch-last` (`skills/`, linked to `~/.claude/skills`) run them, like Plannotator's skills.
+- **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/herdr-ranch-annotate` and `/herdr-ranch-last` (`skills/`, linked to `~/.claude/skills`) run them, like Plannotator's skills.
 - **The agent:** `HC_TERMINAL_ID` names its terminal; `herdr-app ls` gives its pane, app, space and tab. When `ls` answers nothing (seen with herdr-app 0.1.11), `hc ls --json` gives the app, the review opens beside the focused pane, and the mod fills in the space and tab from Herdr's `agents()`.
 - **A review** is a JSON file in `~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json`: the text, the agent, `status` (open, sent, approved, dismissed), the unsent comments (`draft`), the result, and the waiting CLI's process id. Screenshots go to `img/` next to it.
 - **Opening:** the CLI runs `herdr-app do pane.split` with `{ mod, props: { launch } }` beside the agent; that pane opens the dialog (1240 px wide, 90% high), or with Notify only posts the toast, and closes itself.
@@ -46,7 +46,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 ## Built from
 
 - `bin/ranch-review.mjs` (the CLI), `mods/herdr-ranch-reviews/main.js` (the list and the dialog), `mods/herdr-ranch-reviews/reviews.js` (blocks, feedback text, transcripts; shared by both, tested in `tests/reviews.test.mjs`).
-- `skills/ranch-annotate/SKILL.md`, `skills/ranch-last/SKILL.md`.
+- `skills/herdr-ranch-annotate/SKILL.md`, `skills/herdr-ranch-last/SKILL.md`.
 - `mod.json`: `place: none`, a window overlay (70% × 85%), `button: { label: "Reviews", icon: "reviews.svg", opens: "panel", order: 35 }`.
 - herdr: `openOverlay`, `closeOverlay`, `run` (`pane.close`), `panes`, `props`, `exec`, `hc`, `readTextFile`, `writeTextFile`, `watchFolder`, `appHome`, `notify`, `shared`, `setShared`, `theme`.
 - gpui-base: `TextView.markdown`, `TextareaState` / `Textarea`.
@@ -61,6 +61,6 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 ## Done when
 
 - `herdr-app check mods/herdr-ranch-reviews` passes and `cd tests && npm test` passes.
-- `/ranch-annotate README.md` in Claude Code opens the dialog beside the agent; a comment and **Send** return `# File Feedback` to the agent.
-- `/ranch-last` opens the agent's last answer; **Approve** returns "The user approved.".
+- `/herdr-ranch-annotate README.md` in Claude Code opens the dialog beside the agent; a comment and **Send** return `# File Feedback` to the agent.
+- `/herdr-ranch-last` opens the agent's last answer; **Approve** returns "The user approved.".
 - Stopping the agent's command, then sending, pastes the feedback into its prompt.

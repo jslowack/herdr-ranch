@@ -47,7 +47,7 @@ More in [the guide](docs/guide.md#pull-requests).
 
 ![Reviews: a document with comments beside it](herdr-ranch-reviews/preview.png)
 
-Comment on a Markdown file or on your agent's last answer, inside Herdr, and send the comments back to the agent. In Claude Code, `/ranch-annotate <file>` or `/ranch-last` opens the review beside the agent: click a block to comment, paste a screenshot, give a 👍, then **Send** (⌘⇧↵). The agent gets the same feedback text [Plannotator](https://plannotator.ai) gives, so it replaces `plannotator annotate` and `plannotator last` without a browser. The list shows what waits on you, in this space or all.
+Comment on a Markdown file or on your agent's last answer, inside Herdr, and send the comments back to the agent. In Claude Code, `/herdr-ranch-annotate <file>` or `/herdr-ranch-last` opens the review beside the agent: click a block to comment, paste a screenshot, give a 👍, then **Send** (⌘⇧↵). The agent gets the same feedback text [Plannotator](https://plannotator.ai) gives, so it replaces `plannotator annotate` and `plannotator last` without a browser. The list shows what waits on you, in this space or all.
 
 More in [the guide](docs/guide.md#reviews).
 
