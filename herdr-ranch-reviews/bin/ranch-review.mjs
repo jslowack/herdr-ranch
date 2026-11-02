@@ -222,7 +222,9 @@ async function main() {
   for (;;) {
     await new Promise((r) => setTimeout(r, POLL));
     const r = readReview(where);
-    if (!r) { process.stdout.write(json ? `${JSON.stringify({ decision: "dismissed" })}\n` : ""); return 0; }
+    // Unreadable while the mod writes it: read again. Gone: removed from the list (discarded).
+    if (!r && fs.existsSync(where)) continue;
+    if (!r) { process.stdout.write(json ? `${JSON.stringify({ decision: "dismissed" })}\n` : ""); reportStatus(tty, agent.app, "working"); return 0; }
     if (r.status === "open") continue;
     // Approved and dismissed reviews are done with: removed. Sent feedback stays in Reviews for a week.
     if (r.status === "approved" || r.status === "dismissed") fs.rmSync(where, { force: true });
