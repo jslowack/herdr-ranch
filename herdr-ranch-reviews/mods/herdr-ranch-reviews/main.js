@@ -37,15 +37,16 @@ async function update(id, change) {
 }
 
 // Settings, in shared "mod-settings" like the other Herdr Ranch lists (the CLI reads them too):
-//   open: "notify" (the default) shows a toast that opens the review, and counts it on the button;
-//         "open" opens the review as a dialog at once. ("auto" and "list" are older names.)
+//   open: "agent" (the default): the waiting agent shows under Needs you (the CLI reports it) and
+//         the Reviews button counts it; "notify" also shows a toast that opens the review; "open"
+//         opens the review as a dialog at once. ("auto" and "list" are older names.)
 //   sent: how many sent reviews the list shows ("0" hides them).
 //   scope: "space" (the shown space's reviews) or "all".
 const PREFS = "mod-settings";
 const pref = (key, fallback) => shared(PREFS)?.[MOD]?.[key] ?? fallback;
 const setPref = (key, value) => { const all = shared(PREFS) ?? {}; setShared(PREFS, { ...all, [MOD]: { ...all[MOD], [key]: value } }); };
 const SETTINGS = [
-  { key: "open", label: "New review", choices: [["notify", "Notify me"], ["open", "Open it"]], fallback: "notify" },
+  { key: "open", label: "New review", choices: [["agent", "Needs you"], ["notify", "Also a toast"], ["open", "Open it"]], fallback: "agent" },
   { key: "sent", label: "Sent shown", choices: [["0", "None"], ["10", "10"], ["25", "25"], ["50", "50"]], fallback: "10" },
 ];
 const openSettings = () => openOverlay({ mod: MOD, kind: "popup", width: 300, props: { settings: true } });
@@ -74,7 +75,8 @@ function inSpace(r, space, repos) {
   return Boolean(name && space.folder && (space.folder.endsWith(`/${name}`) || worktreeRepo(`${space.folder}/`) === name));
 }
 
-const opensAtOnce = () => ["open", "auto"].includes(pref("open", "notify"));
+const opensAtOnce = () => ["open", "auto"].includes(pref("open", "agent"));
+const toasts = () => ["notify", "list"].includes(pref("open", "agent"));
 
 // The count on the Reviews button (mod-buttons): open reviews.
 async function publishBadge(reviews = null) {
@@ -539,7 +541,7 @@ function watcher(view, cx) {
       // (an old copy during a reload, a second window) don't both post a toast.
       if (!(await claimAnnounce(r.id))) continue;
       if (opensAtOnce()) openReview(r);
-      else notify({
+      else if (toasts()) notify({
         title: r.kind === "last" ? "Review the last message" : `Review ${r.title ?? "a document"}`,
         body: `${r.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
         action: { name: `${MOD}.open-newest` },
@@ -582,7 +584,7 @@ export default class Reviews extends View {
       });
       cx.spawn(async () => { await publishBadge(); });
       if (props()?.show || opensAtOnce()) openReview({ id: String(launch) });
-      else {
+      else if (toasts()) {
         // Notify me: a toast whose click opens this review (a launcher like this one, with
         // `show`), and the count on the Reviews button.
         cx.spawn(async () => {

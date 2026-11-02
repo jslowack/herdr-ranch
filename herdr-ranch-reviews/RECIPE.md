@@ -2,7 +2,7 @@
 
 Comment on a Markdown file, or on an agent's last message, in Herdr, and send the comments back to the agent.
 
-An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude Code you start it with `/herdr-ranch-annotate <file>` or `/herdr-ranch-last`. A toast says the review is ready (or, by setting, it opens at once) as a dialog over Herdr; the command waits until you send, approve or discard, then prints the outcome for the agent.
+An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude Code you start it with `/herdr-ranch-annotate <file>` or `/herdr-ranch-last`. The agent shows under Needs you until you answer (by setting, a toast too, or the review opens at once) and the review opens as a dialog over Herdr; the command waits until you send, approve or discard, then prints the outcome for the agent.
 
 ## What you see
 
@@ -24,7 +24,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 
 ### The cog
 
-**New review:** Notify me (the default: a toast whose click opens the review, and the count) | Open it (the dialog opens at once). **Sent shown:** None | 10 | 25 | 50. Stored in `shared("mod-settings")["herdr-ranch-reviews"]` (`open`, `sent`, `scope`).
+**New review:** Needs you (the default: the agent under Needs you, and the count) | Also a toast (a toast whose click opens the review) | Open it (the dialog opens at once). **Sent shown:** None | 10 | 25 | 50. Stored in `shared("mod-settings")["herdr-ranch-reviews"]` (`open`, `sent`, `scope`).
 
 **Keys:** Cmd+Shift+I opens Reviews (`keys.json`).
 
@@ -35,6 +35,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 - **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/herdr-ranch-annotate` and `/herdr-ranch-last` (`skills/`, linked to `~/.claude/skills`) run them and tell the agent how to handle each outcome.
 - **The agent:** `HC_TERMINAL_ID` names its terminal; `herdr-app ls` gives its pane, app, space and tab. When `ls` answers nothing (seen with herdr-app 0.1.11), `hc ls --json` gives the app, the review opens beside the focused pane, and the mod fills in the space and tab from Herdr's `agents()`.
 - **A review** is a JSON file in `~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json`: the text, the agent, `status` (open, sent, approved, dismissed), the unsent comments (`draft`), the result, and the waiting CLI's process id. Screenshots go to `img/` next to it.
+- **Needs you:** the CLI finds the agent's terminal device (the first process up from it with a tty, `ps -o ppid=,tty=`) and writes the agent's status there as OSC 7501, the way Claude Code reports its own: `ESC ] 7501 ; state=blocked:app=<app>:kind=question:msg=<base64 "Review <title> in Herdr"> BEL`, and `state=working` once the answer is in. A record with its own `id` would not show in the Agents panel, so it is the agent's main status; the agent's next report replaces it.
 - **Opening:** `"background": true` in `mod.json` gives the mod an invisible copy in the mod-buttons layout (a 0 px block with `props.background`). That watcher writes a heartbeat (`.watcher` in the reviews folder, every 20 s), sees a new review file with `watchFolder`, fills in the agent's space and tab from `agents()`, updates the count, and posts the toast (or, with **Open it**, opens the dialog: 1240 px wide, 90% high). The toast's click runs `herdr-ranch-reviews.open-newest`. Without a fresh heartbeat (another layout), the CLI splits a launcher pane beside the agent that does the same and closes itself.
 - **⌘⇧↵:** a key binding (`cx.bind_keys`, context `RanchReview`) to the action `ranch_review_send`, so it works inside the comment box too.
 - **Delivery:** the CLI checks the file every 400 ms and prints the outcome when it changes: the feedback, "The user approved.", or nothing (discarded); `--json` prints `{ decision, feedback, annotationCount }`. When the CLI no longer runs, the mod pastes "I reviewed … in Herdr." plus the feedback into the agent's terminal (`hc send --if idle`, retried for 2 minutes); if that fails too, the review shows "not delivered".

@@ -43,6 +43,31 @@ function repoOf(dir) {
   try { return run("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"]).trim() || null; } catch { return null; }
 }
 
+// The agent's terminal device: the first process up from here that has one (the skill's command
+// itself runs without). Writing a status report there is the agent reporting it.
+function agentTty() {
+  let pid = process.pid;
+  for (let i = 0; i < 12 && pid > 1; i++) {
+    let line = "";
+    try { line = run("ps", ["-o", "ppid=,tty=", "-p", String(pid)]).trim(); } catch { return null; }
+    const [ppid, tty] = line.split(/\s+/);
+    if (tty && tty !== "??" && tty !== "-") return `/dev/${tty.startsWith("tty") ? tty : `tty${tty}`}`;
+    pid = Number(ppid);
+  }
+  return null;
+}
+
+// The agent's status in Herdr (OSC 7501, as Claude Code reports its own): "blocked" puts it under
+// Needs you in the Agents panel while the review waits; "working" once the answer is in. Best
+// effort: without a terminal device, nothing changes.
+function reportStatus(tty, app, state, msg = null) {
+  if (!tty) return;
+  const parts = [`state=${state}`, ...(app ? [`app=${app}`] : [])];
+  if (state === "blocked") parts.push("kind=question");
+  if (msg) parts.push(`msg=${Buffer.from(msg).toString("base64")}`);
+  try { fs.writeFileSync(tty, `\x1b]7501;${parts.join(":")}\x07`); } catch { /* not ours to write */ }
+}
+
 function agentPane() {
   const terminal = process.env.HC_TERMINAL_ID;
   if (!terminal) fail("run this inside a Herdr terminal, from the agent that asks for the review (HC_TERMINAL_ID isn't set).");
@@ -175,6 +200,8 @@ async function main() {
     id, kind: cmd === "last" ? "last" : "file", title, path: file, cwd: process.cwd(), repo: repoOf(process.cwd()), text,
     agent, status: "open", createdAt: new Date().toISOString(), waiting: { pid: process.pid },   };
   writeAtomic(where, review);
+  const tty = agentTty();
+  reportStatus(tty, agent.app, "blocked", `Review ${title} in Herdr`);
 
   // Stopped (the agent's call timed out, Ctrl+C): the mod pastes the feedback instead.
   const stop = () => { const r = readReview(where); if (r && r.status === "open") { r.waiting = null; writeAtomic(where, r); } process.exit(130); };
@@ -202,6 +229,7 @@ async function main() {
     else { r.delivery = "cli"; r.deliveredAt = new Date().toISOString(); r.waiting = null; writeAtomic(where, r); }
     const out = outcomeText(r, json);
     if (out) process.stdout.write(`${out}\n`);
+    reportStatus(tty, agent.app, "working"); // the agent goes on with the answer
     return 0;
   }
 }
