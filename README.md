@@ -47,7 +47,7 @@ More in [the guide](docs/guide.md#pull-requests).
 
 ![Reviews: a document with comments beside it](herdr-ranch-reviews/preview.png)
 
-Read what your agent wrote, comment on it in Herdr, and send the comments back to the agent. In Claude Code, type `/herdr-ranch-annotate <file>` for a plan or document the agent wrote to disk, or `/herdr-ranch-last` for the answer it just gave in chat. While the review waits, the agent shows under **Needs you** and the Reviews button counts it; open it from there. Click a block to comment on it, paste a screenshot, or give a 👍, then **Send N comments** (⌘⇧↵). The agent gets one message that quotes each block with your comment, and revises. **Approve as is** tells it to carry on; **Discard** sends nothing. The Reviews button counts what waits on you, in this space or all.
+Read what your agent wrote, comment on it in Herdr, and send the comments back to the agent. In Claude Code, type `/herdr-ranch-annotate <file>` for a plan or document the agent wrote to disk, or `/herdr-ranch-last` for the answer it just gave in chat. While the review waits, the agent shows under **Needs you**; click it there and the review opens. Click a block to comment on it, paste a screenshot, or give a 👍, then **Send N comments** (⌘⇧↵). The agent gets one message that quotes each block with your comment, and revises. **Approve as is** tells it to carry on; **Discard** sends nothing. The Reviews button counts what waits on you, in this space or all.
 
 More in [the guide](docs/guide.md#reviews).
 

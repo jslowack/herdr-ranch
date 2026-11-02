@@ -525,10 +525,12 @@ async function claimAnnounce(id) {
 
 function watcher(view, cx) {
   const seen = new Set();
+  let waiting = []; // open reviews, from the last scan
   // `touch`: writeTextFile won't replace a file without its current text.
   const beat = () => exec("touch", [`${DIR()}/${HEARTBEAT}`]).catch(() => null);
   const scan = async (first) => {
     const all = await listReviews();
+    waiting = all.filter((x) => x.status === "open");
     await publishBadge(all);
     for (const r of all.filter((x) => x.status === "open")) {
       if (seen.has(r.id)) continue;
@@ -540,7 +542,9 @@ function watcher(view, cx) {
       // Announced once, whichever copy marks the file first (compare-and-swap): two watchers
       // (an old copy during a reload, a second window) don't both post a toast.
       if (!(await claimAnnounce(r.id))) continue;
-      if (opensAtOnce()) openReview(r);
+      // Its agent is the one in front of you (you just typed the skill there): open it now.
+      const here = agents().find((x) => x.focused)?.address;
+      if (opensAtOnce() || (here && here === r.agent?.terminal)) openReview(r);
       else if (toasts()) notify({
         title: r.kind === "last" ? "Review the last message" : `Review ${r.title ?? "a document"}`,
         body: `${r.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
@@ -554,6 +558,17 @@ function watcher(view, cx) {
     try { for (;;) { const changed = await watchFolder(DIR()); if (changed.some((f) => f.endsWith(".json"))) await scan(false); } } catch { /* reloading */ }
   });
   cx.timer.every(20000, () => { beat(); });
+  // Going to an agent that waits for a review (a click on it under Needs you, or any other way
+  // there) opens that review. Only on arrival: closing the review leaves you with the agent.
+  // Moving into a dialog (no agent focused) isn't leaving: only another agent counts.
+  let focused = agents().find((a) => a.focused)?.address ?? null;
+  cx.timer.every(400, () => {
+    const now = agents().find((a) => a.focused)?.address ?? null;
+    if (!now || now === focused) return;
+    focused = now;
+    const r = now ? waiting.find((x) => x.agent?.terminal === now) : null;
+    if (r) openReview(r);
+  });
   // The toast's click: the newest review waiting on you.
   cx.spawn(async () => {
     try {
@@ -644,7 +659,8 @@ export default class Reviews extends View {
 ReviewPage.prototype.refresh = function refresh(cx) {
   cx.spawn(async (cx) => {
     const got = await load(this.id);
-    if (!got) { this.missing = true; cx.notify(); return; }
+    // Gone while shown: finished elsewhere (the CLI removes approved and discarded reviews).
+    if (!got) { if (this.review) { closeSelf(); return; } this.missing = true; cx.notify(); return; }
     const before = this.review?.status;
     this.review = got.review;
     if (before === "open" && got.review.status === "dismissed" && !this.busy) closeSelf();
