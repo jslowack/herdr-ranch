@@ -140,7 +140,10 @@ class ReviewList {
           .hover((e) => e.bg(t.hover).text_color(t.foreground))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child("×");
       return h_flex().id(`r-${r.id}`).flex_none().gap(8).items_start().px(10).py(7).rounded(6).cursor_pointer().hover((e) => e.bg(t.hover))
-        .on_click(() => openReview(r))
+        .on_click((_e, cx) => cx.spawn(async (cx) => {
+          if (await load(r.id)) openReview(r);
+          else { notify({ title: "That review is gone", level: "info", timeout: 3000 }); this.refresh(cx); }
+        }))
         .child(div().size(20).flex_none().rounded_full().bg(color + "2e").flex().items_center().justify_center().text_size(11).text_color(color).child(last ? "✦" : "¶"))
         .child(v_flex().flex_1().min_w(0).gap(2)
           .child(div().truncate().child(last ? `Last message: ${quoteOf(r.text, 70).replace(/\s+/g, " ")}` : r.title))
@@ -331,7 +334,10 @@ class ReviewPage {
   }
 
   render(t, cx) {
-    if (this.missing) return v_flex().size_full().bg(t.background).p(16).text_color(t.dim).child("This review is gone (removed, or older than a week).");
+    if (this.missing) return h_flex().size_full().items_start().bg(t.background).p(16).gap(8)
+      .child(div().flex_1().text_color(t.dim).child("This review is gone (removed, or older than a week)."))
+      .child(div().id("close").size(26).flex_none().flex().items_center().justify_center().rounded(6).text_size(16).text_color(t.muted)
+        .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => closeSelf()).child("×"));
     const r = this.review;
     if (!r) return v_flex().size_full().bg(t.background).p(16).text_color(t.dim).child("Loading…");
     const open = r.status === "open";
