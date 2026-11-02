@@ -514,9 +514,17 @@ class ReviewPage {
 // and shows the toast (or opens the review, by setting), so the CLI needs no pane to wake the mod.
 // `ranch-review` checks its heartbeat file and splits a launcher pane only when no watcher runs.
 const HEARTBEAT = ".watcher";
+// True for the one copy that marks a review as announced first (compare-and-swap on its file).
+async function claimAnnounce(id) {
+  const got = await load(id);
+  if (!got || got.review.announced || got.review.status !== "open") return false;
+  try { await writeTextFile(fileOf(id), JSON.stringify({ ...got.review, announced: true }, null, 2), got.raw); return true; } catch { return false; }
+}
+
 function watcher(view, cx) {
   const seen = new Set();
-  const beat = () => writeTextFile(`${DIR()}/${HEARTBEAT}`, new Date().toISOString()).catch(() => null);
+  // `touch`: writeTextFile won't replace a file without its current text.
+  const beat = () => exec("touch", [`${DIR()}/${HEARTBEAT}`]).catch(() => null);
   const scan = async (first) => {
     const all = await listReviews();
     await publishBadge(all);
@@ -527,6 +535,9 @@ function watcher(view, cx) {
       const a = r.agent?.terminal && !r.agent.space ? agents().find((x) => x.address === r.agent.terminal) : null;
       if (a) await update(r.id, (x) => ({ ...x, agent: { ...x.agent, pane: a.pane, space: a.space, tab: a.tab, app: x.agent?.app ?? a.app } }));
       if (first) continue; // already there when Herdr started: counted, not announced
+      // Announced once, whichever copy marks the file first (compare-and-swap): two watchers
+      // (an old copy during a reload, a second window) don't both post a toast.
+      if (!(await claimAnnounce(r.id))) continue;
       if (opensAtOnce()) openReview(r);
       else notify({
         title: r.kind === "last" ? "Review the last message" : `Review ${r.title ?? "a document"}`,
@@ -575,6 +586,7 @@ export default class Reviews extends View {
         // Notify me: a toast whose click opens this review (a launcher like this one, with
         // `show`), and the count on the Reviews button.
         cx.spawn(async () => {
+          if (!(await claimAnnounce(String(launch)))) return; // the watcher already did
           const r = (await load(String(launch)))?.review;
           notify({
             title: r?.kind === "last" ? "Review the last message" : `Review ${r?.title ?? "a document"}`,

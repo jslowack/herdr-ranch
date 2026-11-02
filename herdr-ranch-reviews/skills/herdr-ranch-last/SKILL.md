@@ -13,7 +13,9 @@ disable-model-invocation: true
 
 ## Your task
 
-The output above will be one of:
+A review can take longer than two minutes. If the output above says the command was moved to the background, wait for its completion notification and read its output file; that output is the answer. Don't start the command again.
+
+The output will be one of:
 
 1. The exact text `The user approved.` The user approved your last message as it is. Acknowledge with one sentence ("Approved.") and stop. Do not begin any work.
 2. Empty. The user discarded the review. Acknowledge with one sentence ("Review discarded.") and stop. Do not begin any work.
