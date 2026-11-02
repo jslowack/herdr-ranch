@@ -46,7 +46,7 @@ const PREFS = "mod-settings";
 const pref = (key, fallback) => shared(PREFS)?.[MOD]?.[key] ?? fallback;
 const setPref = (key, value) => { const all = shared(PREFS) ?? {}; setShared(PREFS, { ...all, [MOD]: { ...all[MOD], [key]: value } }); };
 const SETTINGS = [
-  { key: "open", label: "New review", choices: [["agent", "Needs you"], ["notify", "Also a toast"], ["open", "Open it"]], fallback: "agent" },
+  { key: "open", label: "Opens", choices: [["agent", "On agent focus"], ["notify", "From a toast"], ["open", "At once"]], fallback: "agent" },
   { key: "sent", label: "Sent shown", choices: [["0", "None"], ["10", "10"], ["25", "25"], ["50", "50"]], fallback: "10" },
 ];
 const openSettings = () => openOverlay({ mod: MOD, kind: "popup", width: 300, props: { settings: true } });
