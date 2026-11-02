@@ -37,6 +37,12 @@ function writeAtomic(file, data) {
 const readReview = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } };
 
 // The agent's pane: HC_TERMINAL_ID names its terminal, `herdr-app ls` its pane and app.
+// The repository a folder belongs to (git's common dir, the same for all its worktrees), so the
+// list can show a worktree's reviews in the space of its main checkout.
+function repoOf(dir) {
+  try { return run("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"]).trim() || null; } catch { return null; }
+}
+
 function agentPane() {
   const terminal = process.env.HC_TERMINAL_ID;
   if (!terminal) fail("run this from an agent in a Herdr app terminal (HC_TERMINAL_ID isn't set).");
@@ -47,9 +53,11 @@ function agentPane() {
   }
   // `ls` can answer null (seen 2026-11-02 with the window open): fall back to what the window
   // shows, so the review opens beside the focused pane; delivery only needs the terminal.
-  let st = null;
+  // The app from herdr-core; the space and tab are filled in by the mod (Herdr's agents()).
+  let st = null, app = null;
   try { st = JSON.parse(herdrApp(["status"])); } catch { /* the window is closed */ }
-  return { terminal, pane: st?.focused_pane ?? null, app: null, space: st?.space ?? null, tab: st?.tab ?? null };
+  try { app = JSON.parse(run("hc", ["ls", "--json"])).terminals?.find((t) => t.address === terminal)?.agent ?? null; } catch { /* no hc */ }
+  return { terminal, pane: st?.focused_pane ?? null, app, space: null, tab: null };
 }
 
 // --- The last message ------------------------------------------------------------------------
@@ -150,7 +158,7 @@ async function main() {
   try { prune(); } catch { /* best effort */ }
   const id = newId(), where = path.join(DIR, `${id}.json`);
   const review = {
-    id, kind: cmd === "last" ? "last" : "file", title, path: file, cwd: process.cwd(), text,
+    id, kind: cmd === "last" ? "last" : "file", title, path: file, cwd: process.cwd(), repo: repoOf(process.cwd()), text,
     agent, status: "open", createdAt: new Date().toISOString(), waiting: { pid: process.pid },   };
   writeAtomic(where, review);
 

@@ -8,7 +8,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 
 ### The review (a dialog)
 
-- **Header:** the file name (or "Last message"), the agent and its state ("agent waiting", "waiting", "sent", "not delivered") and the path, a **Rendered | Source** toggle, **Dismiss**, then **Approve** (no comments) or **Send N comments** (with comments), and **×**. **⌘⇧↵** does what the main button shows. **×** only closes the dialog: the review keeps waiting, with its unsent comments, in the list.
+- **Header:** the file name (or "Last message"), the agent and its state ("agent waiting", "waiting", "sent", "not delivered") and the path, a **Rendered | Source** toggle, **Discard** (the agent gets nothing back), then **Approve as is** (no comments) or **Send N comments**, and **×**. Each button explains itself on hover. **⌘⇧↵** does what the main button shows. **×** only closes the dialog: the review keeps waiting, with its unsent comments, in the list.
 - **The document, left:** rendered Markdown, one row per block (heading, paragraph, list item, code, quote, table). Each list item is its own block. Its source lines and the numbers of its comments (or 👍) show on the right. A click on a block opens a comment on it; a block with a comment opens that comment. A right-click copies the block's Markdown (a quote without its `> ` markers), with a "Copied lines 13-19" toast. Source shows the plain lines.
 - **The comments, right:** one card per comment, block comments by line and then by when they were added, general comments last. A click on a card edits it and outlines its block. **+ General comment** for the whole document.
 - **The comment box:** a text area (⌘↵ saves, ⌘⇧↵ saves and sends), **👍 Looks good** (block comments: adds Plannotator's quick label instead), **Cancel**, **Save**. ⌘V with an image on the clipboard adds a screenshot as a thumbnail (× removes it); the agent gets its path.
@@ -16,10 +16,10 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 
 ### The list (the Reviews button)
 
-- **Header:** "Reviews", the shown space's name (or "every space"), **This space | All** (remembered), a cog, ↻, and × when open as a window. A review is in a space when its agent runs there, or its folder is the space's folder or inside it.
+- **Header:** "Reviews", the shown space's name (or "every space"), **This space | All** (remembered), a cog, ↻, and × when open as a window. A review is in a space when its agent runs there, its folder is the space's folder or inside it, or it ran in another worktree of the space's repository (the same `git rev-parse --git-common-dir`, recorded by the CLI as `repo`; for older reviews, a folder under `~/.herdr/worktrees/<repo>/`).
 - **Waiting on you:** open reviews, newest first, with what, the agent, and "asked 5m ago". A click opens the review.
 - **Sent:** the newest sent reviews (as many as the cog says), with "done 1h ago" and their comment count. Approved and dismissed reviews are not listed.
-- **×** on a row turns into a red confirm (**Dismiss** for an open review, **Remove** for a sent one) with **Cancel**.
+- **×** on a row turns into a red confirm (**Discard** for an open review, **Remove** for a sent one) with **Cancel**.
 - **Button count** (mod-buttons): open reviews, through `shared("mod-badges")["herdr-ranch-reviews"]`.
 
 ### The cog
@@ -33,7 +33,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`). The revie
 ## How it behaves
 
 - **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/ranch-annotate` and `/ranch-last` (`skills/`, linked to `~/.claude/skills`) run them, like Plannotator's skills.
-- **The agent:** `HC_TERMINAL_ID` names its terminal; `herdr-app ls` gives its pane, app, space and tab. When `ls` answers nothing, the focused pane is used.
+- **The agent:** `HC_TERMINAL_ID` names its terminal; `herdr-app ls` gives its pane, app, space and tab. When `ls` answers nothing (seen with herdr-app 0.1.11), `hc ls --json` gives the app, the review opens beside the focused pane, and the mod fills in the space and tab from Herdr's `agents()`.
 - **A review** is a JSON file in `~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json`: the text, the agent, `status` (open, sent, approved, dismissed), the unsent comments (`draft`), the result, and the waiting CLI's process id. Screenshots go to `img/` next to it.
 - **Opening:** the CLI runs `herdr-app do pane.split` with `{ mod, props: { launch } }` beside the agent; that pane opens the dialog (1240 px wide, 90% high), or with Notify only posts the toast, and closes itself.
 - **⌘⇧↵:** a key binding (`cx.bind_keys`, context `RanchReview`) to the action `ranch_review_send`, so it works inside the comment box too.

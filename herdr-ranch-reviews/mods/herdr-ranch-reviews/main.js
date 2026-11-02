@@ -59,8 +59,19 @@ function settingsMenu(t) {
 }
 
 // Whether a review belongs to a space: its agent ran there, or its folder is the space's.
-const inSpace = (r, space) => !space || r.agent?.space === space.id
-  || (!r.agent?.space && space.folder && (r.cwd === space.folder || String(r.cwd ?? "").startsWith(`${space.folder}/`)));
+// Whether a review belongs to the shown space: its agent ran in it, it ran in the space's folder,
+// or in another checkout of the same repository (a worktree: the sidebar lists those under it).
+// `repos` maps a folder to its repository (git's common dir), filled by ReviewList.repoOf.
+const under = (p, folder) => Boolean(p && folder) && (p === folder || p.startsWith(`${folder}/`));
+const worktreeRepo = (p) => String(p ?? "").match(/\/\.herdr\/worktrees\/([^/]+)\//)?.[1] ?? null; // Herdr's own worktrees
+function inSpace(r, space, repos) {
+  if (!space) return true;
+  if (r.agent?.space === space.id || under(r.cwd, space.folder)) return true;
+  const mine = repos.get(space.folder);
+  if (mine && r.repo && r.repo === mine) return true;
+  const name = worktreeRepo(r.cwd);
+  return Boolean(name && space.folder && (space.folder.endsWith(`/${name}`) || worktreeRepo(`${space.folder}/`) === name));
+}
 
 const alive = async (pid) => Number.isInteger(pid) && (await exec("kill", ["-0", String(pid)]).then((r) => r.code === 0, () => false));
 
@@ -81,7 +92,17 @@ function openReview(review) {
 }
 
 class ReviewList {
-  constructor(owner) { this.owner = owner; this.reviews = []; this.loading = false; this.confirming = null; }
+  constructor(owner) { this.owner = owner; this.reviews = []; this.loading = false; this.confirming = null; this.repos = new Map(); }
+
+  // The repository of a space's folder (git's common dir), once per folder.
+  repoOf(folder, cx) {
+    if (!folder || this.repos.has(folder)) return;
+    this.repos.set(folder, null);
+    cx.spawn(async (cx) => {
+      const r = await exec("git", ["-C", folder, "rev-parse", "--path-format=absolute", "--git-common-dir"]).catch(() => null);
+      if (r?.code === 0 && r.stdout.trim()) { this.repos.set(folder, r.stdout.trim()); cx.notify(); }
+    });
+  }
 
   refresh(cx) {
     if (this.loading) { this.again = true; return; }
@@ -113,7 +134,8 @@ class ReviewList {
 
   render(t, cx) {
     const scope = pref("scope", "space"), space = scope === "space" ? spaces().find((x) => x.active) ?? null : null;
-    const shown = this.reviews.filter((r) => inSpace(r, space));
+    if (space) this.repoOf(space.folder, cx);
+    const shown = this.reviews.filter((r) => inSpace(r, space, this.repos));
     const waiting = shown.filter((r) => r.status === "open");
     // Approved and dismissed reviews leave the list: only feedback you sent stays, for a week,
     // the newest `sent` of them.
@@ -133,7 +155,7 @@ class ReviewList {
       const x = asking
         ? h_flex().flex_none().gap(4)
           .child(div().id(`yes-${r.id}`).px(8).py(2).rounded(5).bg(t.ansi1).text_color(t.background).text_size(11).font_semibold().cursor_pointer()
-            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child(r.status === "open" ? "Dismiss" : "Remove"))
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child(r.status === "open" ? "Discard" : "Remove"))
           .child(div().id(`no-${r.id}`).px(6).py(2).rounded(5).text_size(11).text_color(t.muted).cursor_pointer().hover((e) => e.bg(t.hover))
             .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.confirming = null; cx.notify(); }).child("Cancel"))
         : div().id(`x-${r.id}`).size(20).flex_none().flex().items_center().justify_center().rounded(5).text_color(t.dim).cursor_pointer()
@@ -341,7 +363,7 @@ class ReviewPage {
     const r = this.review;
     if (!r) return v_flex().size_full().bg(t.background).p(16).text_color(t.dim).child("Loading…");
     const open = r.status === "open";
-    const btn = (id, label, click, primary = false, enabled = true) => div().id(id).flex_none().px(10).py(3).rounded(6).text_size(12)
+    const btn = (id, label, click, primary = false, enabled = true, tip = null) => div().id(id).flex_none().when(Boolean(tip), (e) => e.tooltip(tip)).px(10).py(3).rounded(6).text_size(12)
       .border_1().border_color(primary ? t.solid : t.border).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground)
       .when(enabled && !this.busy, (e) => e.cursor_pointer().hover((s) => s.opacity(0.85)).on_click((_e, cx) => click(cx)))
       .when(!enabled || this.busy, (e) => e.opacity(0.5))
@@ -357,9 +379,10 @@ class ReviewPage {
         .child(div().text_size(11).text_color(t.dim).truncate().child([r.agent?.app ?? "agent", status, r.kind === "file" ? r.path : null].filter(Boolean).join(" · "))))
       .child(toggle)
       // No "approve with notes": a general comment plus Send covers it. ⌘⇧↵ sends, or approves with no comments.
-      .when(open, (e) => e.child(btn("dismiss", "Dismiss", (cx) => this.finish("dismissed", cx)))
-        .when(!n, (e) => e.child(btn("approve", "Approve  ⌘⇧↵", (cx) => this.finish("approved", cx), true)))
-        .when(n > 0, (e) => e.child(btn("send", `Send ${n} comment${n === 1 ? "" : "s"}  ⌘⇧↵`, (cx) => this.finish("annotated", cx), true))))
+      // What each button tells the agent, on hover too.
+      .when(open, (e) => e.child(btn("dismiss", "Discard", (cx) => this.finish("dismissed", cx), false, true, "Close the review without an answer: the agent gets nothing back"))
+        .when(!n, (e) => e.child(btn("approve", "Approve as is  ⌘⇧↵", (cx) => this.finish("approved", cx), true, true, "Tell the agent it's good as it is (no comments)")))
+        .when(n > 0, (e) => e.child(btn("send", `Send ${n} comment${n === 1 ? "" : "s"}  ⌘⇧↵`, (cx) => this.finish("annotated", cx), true, true, "Send your comments to the agent"))))
       .when(!open && stateOf(r) === "undelivered", (e) => e.child(btn("copy", "Copy feedback", (cx) => { cx.write_to_clipboard(pastePrompt(r)); notify({ title: "Copied", level: "info", timeout: 2000 }); })))
       // × closes the dialog only: the review keeps waiting, with its unsent comments, in Reviews.
       .when(Boolean(props()?.overlay), (e) => e.child(div().id("close").size(26).flex_none().flex().items_center().justify_center().rounded(6).text_size(16)
@@ -458,6 +481,12 @@ export default class Reviews extends View {
     const launch = props()?.launch;
     if (launch) {
       this.launched = true;
+      // The CLI may not have known the agent's space, tab or app: Herdr's agents() does.
+      cx.spawn(async () => {
+        const got = await load(String(launch)), term = got?.review?.agent?.terminal;
+        const a = term ? agents().find((x) => x.address === term) : null;
+        if (a) await update(String(launch), (r) => ({ ...r, agent: { ...r.agent, pane: a.pane, space: a.space, tab: a.tab, app: r.agent?.app ?? a.app } }));
+      });
       if (pref("open", "auto") === "list") {
         // Notify only: a toast that opens the list, and the count on the button.
         cx.spawn(async () => {
