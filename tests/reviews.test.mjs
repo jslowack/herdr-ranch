@@ -84,6 +84,8 @@ test("lastCodexText: the folder from session_meta, the last assistant text", () 
 test("helpers: quoteOf trims and cuts, stateOf, newId sorts by time", () => {
   assert.equal(quoteOf("  abcdef  ", 3), "abc…");
   assert.equal(stateOf({ status: "sent", delivery: "kept" }), "undelivered");
+  assert.equal(stateOf({ status: "approved", delivery: "kept" }), "undelivered");
+  assert.equal(stateOf({ status: "dismissed", delivery: "kept" }), "dismissed");
   assert.equal(stateOf({ status: "open" }), "waiting");
   assert.equal(stateOf(null), "dismissed");
   assert.ok(newId(1.7e12, () => 0.99) < newId(1.7e12 + 1, () => 0));

@@ -4,7 +4,8 @@
 // `plannotator last` read ours the same way. No Herdr imports here.
 
 export const MOD = "herdr-ranch-reviews";
-export const MAX_TEXT = 512 * 1024; // a review's text, in characters; the mod reads files up to 1 MiB
+export const MAX_TEXT = 512 * 1024; // a review's text, in characters
+export const MAX_BYTES = 600 * 1024; // a new review file, in bytes: the mod reads files up to 1 MiB, and comments come on top
 export const KEEP_DAYS = 7; // finished reviews older than this are removed by the CLI
 
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
@@ -215,7 +216,7 @@ export function newId(now = Date.now(), rand = Math.random) {
 export function stateOf(review) {
   if (!review) return "dismissed";
   if (review.status === "open") return "waiting";
-  if (review.status === "sent" && review.delivery === "kept") return "undelivered";
+  if (review.delivery === "kept" && review.status !== "dismissed") return "undelivered";
   return review.status;
 }
 

@@ -71,8 +71,10 @@ function inSpace(r, space, repos) {
   if (r.agent?.space === space.id || under(r.cwd, space.folder)) return true;
   const mine = repos.get(space.folder);
   if (mine && r.repo && r.repo === mine) return true;
+  // Older reviews have no `repo`: a Herdr worktree matches a space that is a worktree of the
+  // same repository (the folder name alone could be another repository's).
   const name = worktreeRepo(r.cwd);
-  return Boolean(name && space.folder && (space.folder.endsWith(`/${name}`) || worktreeRepo(`${space.folder}/`) === name));
+  return Boolean(name && space.folder && worktreeRepo(`${space.folder}/`) === name);
 }
 
 const opensAtOnce = () => ["open", "auto"].includes(pref("open", "agent"));
@@ -92,9 +94,7 @@ async function listReviews() {
   const r = await exec("ls", ["-1", DIR()]).catch(() => null);
   if (!r || r.code !== 0) return [];
   const ids = r.stdout.split("\n").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort().reverse().slice(0, 100);
-  const out = [];
-  for (const id of ids) { const got = await load(id); if (got) out.push(got.review); }
-  return out;
+  return (await Promise.all(ids.map((id) => load(id)))).filter(Boolean).map((got) => got.review);
 }
 
 // Opens a review as a dialog over the window, like the page of a pull request or an issue.
@@ -144,7 +144,7 @@ class ReviewList {
     // Approved and dismissed reviews leave the list: only feedback you sent stays, for a week,
     // the newest `sent` of them.
     const limit = Number(pref("sent", "10")) || 0;
-    const done = shown.filter((r) => r.status === "sent");
+    const done = shown.filter((r) => r.status === "sent" || stateOf(r) === "undelivered");
     const pill = (text, c) => div().flex_none().px(6).py(1).rounded(4).border_1().border_color(c + "66").bg(c + "12").text_size(11).text_color(c).child(text);
     const heading = (label, n) => h_flex().flex_none().px(10).pt(10).pb(2).gap(6).text_size(12).text_color(t.dim)
       .child(div().font_semibold().child(label)).child(div().child(String(n)));
@@ -351,37 +351,13 @@ class ReviewPage {
       const done = await update(this.id, (r) => ({ ...r, status, draft: null, finishedAt: new Date().toISOString(), result: { decision, feedback, comments } }));
       if (!done) { this.busy = false; this.note = "Couldn't save the review."; cx.notify(); return; }
       this.review = done;
-      // A waiting `ranch-review` picks it up; else paste it into the agent (not for a dismiss).
-      const waiting = await alive(done.waiting?.pid);
-      if (!waiting && decision !== "dismissed") await this.paste(done, cx);
-      else if (!waiting) await exec("rm", ["-f", fileOf(this.id)]).catch(() => null);
-      else if (waiting) notify({ title: decision === "approved" ? "Approved" : decision === "dismissed" ? "Review discarded" : "Feedback sent", body: done.title, level: "success", timeout: 3000 });
-      this.busy = false; cx.notify(); publishBadge().catch(() => null);
-      if (done.delivery !== "kept") closeSelf();
+      publishBadge().catch(() => null);
+      // A waiting `ranch-review` takes the answer; else the watcher pastes it into the agent
+      // (deliver), so this dialog closes now. Without a watcher (another layout), it delivers.
+      if (!(await watcherAlive())) await deliver(this.id, cx);
+      this.busy = false; cx.notify();
+      closeSelf();
     });
-  }
-
-  // Pastes the feedback into the agent's terminal once it is idle; keeps it (with Copy) when the
-  // agent is gone, asking a question, or stays busy past PASTE_FOR.
-  async paste(review, cx) {
-    const terminal = review.agent?.terminal, text = pastePrompt(review);
-    const until = Date.now() + PASTE_FOR;
-    const attempt = async () => {
-      const agent = agents().find((a) => a.address === terminal || a.address?.endsWith(`/${terminal}`));
-      if (!agent || agent.status === "blocked") return "kept";
-      if (agent.status === "working") return Date.now() < until ? "retry" : "kept";
-      const r = await hc(["send", "--if", "idle", terminal, text]).catch(() => null);
-      return r?.code === 0 ? "pasted" : Date.now() < until ? "retry" : "kept";
-    };
-    let outcome = await attempt();
-    while (outcome === "retry") {
-      await new Promise((resolve) => cx.timer.after(PASTE_EVERY, () => resolve()));
-      outcome = await attempt();
-    }
-    this.review = (await update(this.id, (r) => ({ ...r, delivery: outcome, deliveredAt: new Date().toISOString() }))) ?? this.review;
-    if (outcome === "pasted" && review.result?.decision === "approved") await exec("rm", ["-f", fileOf(this.id)]).catch(() => null);
-    if (outcome === "pasted") notify({ title: "Feedback sent to the agent", body: review.title, level: "success", timeout: 3000 });
-    else notify({ title: "Feedback not delivered", body: "The agent isn't there or is asking something. Copy it from the review.", level: "warning", timeout: 6000 });
   }
 
   render(t, cx) {
@@ -515,11 +491,53 @@ class ReviewPage {
 // and opens the review when you go to its agent (or right away, by setting), so the CLI needs no pane to wake the mod.
 // `ranch-review` checks its heartbeat file and splits a launcher pane only when no watcher runs.
 const HEARTBEAT = ".watcher";
-// True for the one copy that marks a review as announced first (compare-and-swap on its file).
-async function claimAnnounce(id) {
+// True for the one copy that marks a review first (compare-and-swap on its file): `key` set to
+// now, unless set less than `ms` ago. Two watchers (an old copy during a reload, a second
+// window) then don't both open a dialog.
+async function claimOnce(id, key, ms = Infinity) {
   const got = await load(id);
-  if (!got || got.review.announced || got.review.status !== "open") return false;
-  try { await writeTextFile(fileOf(id), JSON.stringify({ ...got.review, announced: true }, null, 2), got.raw); return true; } catch { return false; }
+  if (!got || got.review.status !== "open") return false;
+  const at = got.review[key];
+  if (at && (at === true || Date.now() - at < ms)) return false;
+  try { await writeTextFile(fileOf(id), JSON.stringify({ ...got.review, [key]: Date.now() }, null, 2), got.raw); return true; } catch { return false; }
+}
+const claimAnnounce = (id) => claimOnce(id, "announced");
+
+// Whether the watcher runs (its heartbeat changed in the last minute).
+const watcherAlive = async () => (await exec("sh", ["-c", '[ -n "$(find "$1" -mmin -1 2>/dev/null)" ]', "sh", `${DIR()}/${HEARTBEAT}`]).catch(() => null))?.code === 0;
+const sameTerminal = (address, terminal) => Boolean(address && terminal) && (address === terminal || address.endsWith(`/${terminal}`));
+
+// Pastes a finished review into its agent once it is idle: "pasted", or "kept" when the agent is
+// gone, asking something, or stays busy past PASTE_FOR.
+async function pasteInto(review, cx) {
+  const terminal = review.agent?.terminal, text = pastePrompt(review), until = Date.now() + PASTE_FOR;
+  for (;;) {
+    const agent = agents().find((a) => sameTerminal(a.address, terminal));
+    if (!agent || agent.status === "blocked") return "kept";
+    if (agent.status !== "working") {
+      const r = await hc(["send", "--if", "idle", terminal, text]).catch(() => null);
+      if (r?.code === 0) return "pasted";
+    }
+    if (Date.now() >= until) return "kept";
+    await new Promise((resolve) => cx.timer.after(PASTE_EVERY, () => resolve()));
+  }
+}
+
+// Delivers a finished review that no `ranch-review` took: a discard is removed; feedback or an
+// approval is pasted into the agent. Claimed first (delivery "pasting", compare-and-swap) and only
+// once the CLI is gone, so the agent never gets it twice. The CLI marks its own delivery "cli"
+// (or removes the file) before it exits.
+async function deliver(id, cx) {
+  const got = await load(id), r = got?.review;
+  if (!r || r.status === "open" || r.delivery) return;
+  if (await alive(r.waiting?.pid)) return; // the CLI takes it
+  if (r.status === "dismissed") { await exec("rm", ["-f", fileOf(id)]).catch(() => null); return; }
+  try { await writeTextFile(fileOf(id), JSON.stringify({ ...r, delivery: "pasting" }, null, 2), got.raw); } catch { return; }
+  const outcome = await pasteInto(r, cx);
+  await update(id, (x) => ({ ...x, delivery: outcome, deliveredAt: new Date().toISOString() }));
+  if (outcome === "pasted" && r.status === "approved") await exec("rm", ["-f", fileOf(id)]).catch(() => null);
+  if (outcome === "pasted") notify({ title: "Feedback sent to the agent", body: r.title, level: "success", timeout: 3000 });
+  else notify({ title: "Feedback not delivered", body: `The agent isn't there or is asking something. Copy it from Reviews: ${r.title}.`, level: "warning", timeout: 8000 });
 }
 
 function watcher(view, cx) {
@@ -531,18 +549,19 @@ function watcher(view, cx) {
     const all = await listReviews();
     waiting = all.filter((x) => x.status === "open");
     await publishBadge(all);
+    for (const x of all) if (x.status !== "open" && !x.delivery) cx.spawn(async (cx) => { await deliver(x.id, cx); });
     for (const r of all.filter((x) => x.status === "open")) {
       if (seen.has(r.id)) continue;
       seen.add(r.id);
       // The CLI may not have known the agent's space, tab or app: Herdr's agents() does.
-      const a = r.agent?.terminal && !r.agent.space ? agents().find((x) => x.address === r.agent.terminal) : null;
+      const a = r.agent?.terminal && !r.agent.space ? agents().find((x) => sameTerminal(x.address, r.agent.terminal)) : null;
       if (a) await update(r.id, (x) => ({ ...x, agent: { ...x.agent, pane: a.pane, space: a.space, tab: a.tab, app: x.agent?.app ?? a.app } }));
       if (first) continue; // already there when Herdr started: counted, not announced
       // Its agent is the one in front of you (you just typed the skill there), or Immediately:
       // open it now, once, whichever copy marks the file first (compare-and-swap), so two
       // watchers (an old copy during a reload, a second window) don't both open it.
       const here = agents().find((x) => x.focused)?.address;
-      if ((opensAtOnce() || (here && here === r.agent?.terminal)) && (await claimAnnounce(r.id))) openReview(r);
+      if ((opensAtOnce() || sameTerminal(here, r.agent?.terminal)) && (await claimAnnounce(r.id))) openReview(r);
     }
   };
   cx.spawn(async () => {
@@ -559,8 +578,8 @@ function watcher(view, cx) {
     const now = agents().find((a) => a.focused)?.address ?? null;
     if (!now || now === focused) return;
     focused = now;
-    const r = now ? waiting.find((x) => x.agent?.terminal === now) : null;
-    if (r) openReview(r);
+    const r = waiting.find((x) => sameTerminal(now, x.agent?.terminal));
+    if (r) cx.spawn(async () => { if (await claimOnce(r.id, "focusOpenedAt", 3000)) openReview(r); });
   });
 }
 
@@ -578,15 +597,13 @@ export default class Reviews extends View {
       // The CLI may not have known the agent's space, tab or app: Herdr's agents() does.
       cx.spawn(async () => {
         const got = await load(String(launch)), term = got?.review?.agent?.terminal;
-        const a = term ? agents().find((x) => x.address === term) : null;
+        const a = term ? agents().find((x) => sameTerminal(x.address, term)) : null;
         if (a) await update(String(launch), (r) => ({ ...r, agent: { ...r.agent, pane: a.pane, space: a.space, tab: a.tab, app: r.agent?.app ?? a.app } }));
       });
       cx.spawn(async () => { await publishBadge(); });
-      // As the watcher would: now when Immediately, or when its agent is the one in front of you.
-      cx.spawn(async () => {
-        const r = (await load(String(launch)))?.review, here = agents().find((x) => x.focused)?.address;
-        if ((opensAtOnce() || (here && here === r?.agent?.terminal)) && (await claimAnnounce(String(launch)))) openReview({ id: String(launch) });
-      });
+      // No watcher runs (the CLI splits a launcher only then), so nothing could open it later:
+      // open it now.
+      openReview({ id: String(launch) });
       // Reviews never live in a pane any more, so every Reviews pane in the agent's tab is a
       // launcher (this one, or one left over): close them once the new pane exists.
       cx.spawn(async (cx) => {

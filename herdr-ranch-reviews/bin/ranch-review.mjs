@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MOD, MAX_TEXT, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText } from "../mods/herdr-ranch-reviews/reviews.js";
+import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText } from "../mods/herdr-ranch-reviews/reviews.js";
 
 const HOME = os.homedir();
 const APP = process.env.HERDR_APP_HOME || path.join(HOME, ".config", "herdr-app");
@@ -33,6 +33,23 @@ function writeAtomic(file, data) {
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, file);
+}
+
+// Changes a review the mod may write too: only when the file still holds what `change` was given
+// (the mod writes compare-and-swap; this keeps the CLI from undoing its last write).
+function updateReview(file, change) {
+  for (let i = 0; i < 5; i++) {
+    let raw; try { raw = fs.readFileSync(file, "utf8"); } catch { return null; }
+    let r; try { r = JSON.parse(raw); } catch { continue; }
+    const next = change(r);
+    if (!next) return r;
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+    let now = null; try { now = fs.readFileSync(file, "utf8"); } catch { /* gone */ }
+    if (now === raw) { fs.renameSync(tmp, file); return next; }
+    fs.rmSync(tmp, { force: true });
+  }
+  return null;
 }
 const readReview = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } };
 
@@ -199,12 +216,19 @@ async function main() {
   const review = {
     id, kind: cmd === "last" ? "last" : "file", title, path: file, cwd: process.cwd(), repo: repoOf(process.cwd()), text,
     agent, status: "open", createdAt: new Date().toISOString(), waiting: { pid: process.pid },   };
+  const bytes = Buffer.byteLength(JSON.stringify(review, null, 2));
+  if (bytes > MAX_BYTES) fail(`the text is too big to review (${Math.round(bytes / 1024)} KB as a review file, at most ${MAX_BYTES / 1024} KB).`);
   writeAtomic(where, review);
   const tty = agentTty();
   reportStatus(tty, agent.app, "blocked", `Review ${title} in Herdr`);
 
-  // Stopped (the agent's call timed out, Ctrl+C): the mod pastes the feedback instead.
-  const stop = () => { const r = readReview(where); if (r && r.status === "open") { r.waiting = null; writeAtomic(where, r); } process.exit(130); };
+  // Stopped (the agent's call timed out, Ctrl+C): nobody waits now, so the mod's watcher pastes the
+  // answer into the agent instead; the agent stops showing under Needs you.
+  const stop = () => {
+    updateReview(where, (r) => (r.status === "open" ? { ...r, waiting: null } : null));
+    reportStatus(tty, agent.app, "idle");
+    process.exit(130);
+  };
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, stop);
 
   // The mod's watcher (an invisible copy in the mod-buttons layout) sees the new file and shows
@@ -228,7 +252,7 @@ async function main() {
     if (r.status === "open") continue;
     // Approved and dismissed reviews are done with: removed. Sent feedback stays in Reviews for a week.
     if (r.status === "approved" || r.status === "dismissed") fs.rmSync(where, { force: true });
-    else { r.delivery = "cli"; r.deliveredAt = new Date().toISOString(); r.waiting = null; writeAtomic(where, r); }
+    else updateReview(where, (x) => ({ ...x, delivery: "cli", deliveredAt: new Date().toISOString(), waiting: null }));
     const out = outcomeText(r, json);
     if (out) process.stdout.write(`${out}\n`);
     reportStatus(tty, agent.app, "working"); // the agent goes on with the answer
