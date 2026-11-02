@@ -12,6 +12,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 - **Works on macOS, Linux and Windows.** Remote spaces run `gh` and `git` on their own machine.
 - **Programs:**
   - `gh` and `git`;
+  - `curl` (Pull requests, for the GitHub avatars; without it, initials show), on this machine;
   - `plannotator` (Inbox, Review in Plannotator), on the space's machine for remote spaces;
   - for the Jira and Linear sign-in: `security` (macOS), `secret-tool` (Linux) or PowerShell (Windows);
   - for Inbox: `ps` (that a process is Plannotator's before it is stopped), `lsof` (which port listens and a session's folder on macOS) and `readlink` (a session's folder on Linux, through `/proc`);
@@ -20,13 +21,15 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 - **Network:**
   - Jira: `https://<your-site>/rest/api/3` with your token;
   - Linear: `https://api.linear.app/graphql` with your API key;
-  - GitHub only through `gh`;
+  - GitHub's API only through `gh`;
+  - Pull requests: each person's avatar from `https://github.com/<login>.png?size=64` with `curl`, without a token, once per session;
   - the update check, once a day: `gh api repos/jslowack/herdr-ranch/releases/latest`, else `git ls-remote --tags https://github.com/jslowack/herdr-ranch`.
 - **Stored:**
   - in the system's credential store, only after you press Connect: the Jira sign-in (item `herdr-jira:<site>`) and the Linear key (item `herdr-linear:linear.app`);
   - in Herdr's shared state: the space links, the lists' settings, your prompts and the last update check;
   - in the mod's local storage: the last list per space;
-  - the icons in `~/.config/herdr-app/data/herdr-ranch/icons`.
+  - the icons in `~/.config/herdr-app/data/herdr-ranch/icons`;
+  - the GitHub avatars in `~/.config/herdr-app/data/herdr-ranch/avatars`, downloaded again each session. Nothing deletes them.
 - **Files outside Herdr's folder:** Inbox watches `~/.plannotator/sessions` and removes a record file there only for a session that isn't running anymore. Start agent writes worktrees under `~/.herdr/worktrees`.
 
 ## install.sh flags

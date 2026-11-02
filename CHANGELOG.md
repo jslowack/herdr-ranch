@@ -2,6 +2,10 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Inbox mods and the mod-buttons layout share one version. The cog in each list shows the installed version and offers **Update** when a newer release exists.
 
+## Unreleased
+
+- **Pull requests:** the list and the page show GitHub avatars instead of initials.
+
 ## v0.1.0
 
 The first release.
