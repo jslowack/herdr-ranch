@@ -10,7 +10,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
-import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces, nextCommand } from "herdr";
+import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
 import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText, imageOnly } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
@@ -37,16 +37,16 @@ async function update(id, change) {
 }
 
 // Settings, in shared "mod-settings" like the other Herdr Ranch lists (the CLI reads them too):
-//   open: "agent" (the default): the waiting agent shows under Needs you (the CLI reports it) and
-//         the Reviews button counts it; "notify" also shows a toast that opens the review; "open"
-//         opens the review as a dialog at once. ("auto" and "list" are older names.)
+//   open: "agent" (the default): the waiting agent shows under Needs you (the CLI reports it), the
+//         Reviews button counts it, and going to that agent opens the review; "open" opens the
+//         review right away. (Older values, "notify", "list" and "auto", count as these.)
 //   sent: how many sent reviews the list shows ("0" hides them).
 //   scope: "space" (the shown space's reviews) or "all".
 const PREFS = "mod-settings";
 const pref = (key, fallback) => shared(PREFS)?.[MOD]?.[key] ?? fallback;
 const setPref = (key, value) => { const all = shared(PREFS) ?? {}; setShared(PREFS, { ...all, [MOD]: { ...all[MOD], [key]: value } }); };
 const SETTINGS = [
-  { key: "open", label: "Opens", choices: [["agent", "On agent focus"], ["notify", "From a toast"], ["open", "At once"]], fallback: "agent" },
+  { key: "open", label: "Opens", choices: [["agent", "On agent focus"], ["open", "Immediately"]], fallback: "agent" },
   { key: "sent", label: "Sent shown", choices: [["0", "None"], ["10", "10"], ["25", "25"], ["50", "50"]], fallback: "10" },
 ];
 const openSettings = () => openOverlay({ mod: MOD, kind: "popup", width: 300, props: { settings: true } });
@@ -76,7 +76,6 @@ function inSpace(r, space, repos) {
 }
 
 const opensAtOnce = () => ["open", "auto"].includes(pref("open", "agent"));
-const toasts = () => ["notify", "list"].includes(pref("open", "agent"));
 
 // The count on the Reviews button (mod-buttons): open reviews.
 async function publishBadge(reviews = null) {
@@ -513,7 +512,7 @@ class ReviewPage {
 // The watcher: an invisible copy in the layout (`"background": true` in mod.json: the mod-buttons
 // layout gives it a 0 px block with props { background: true }), alive
 // while Herdr runs. It sees a new review arrive in the folder, counts it on the Reviews button,
-// and shows the toast (or opens the review, by setting), so the CLI needs no pane to wake the mod.
+// and opens the review when you go to its agent (or right away, by setting), so the CLI needs no pane to wake the mod.
 // `ranch-review` checks its heartbeat file and splits a launcher pane only when no watcher runs.
 const HEARTBEAT = ".watcher";
 // True for the one copy that marks a review as announced first (compare-and-swap on its file).
@@ -539,17 +538,11 @@ function watcher(view, cx) {
       const a = r.agent?.terminal && !r.agent.space ? agents().find((x) => x.address === r.agent.terminal) : null;
       if (a) await update(r.id, (x) => ({ ...x, agent: { ...x.agent, pane: a.pane, space: a.space, tab: a.tab, app: x.agent?.app ?? a.app } }));
       if (first) continue; // already there when Herdr started: counted, not announced
-      // Announced once, whichever copy marks the file first (compare-and-swap): two watchers
-      // (an old copy during a reload, a second window) don't both post a toast.
-      if (!(await claimAnnounce(r.id))) continue;
-      // Its agent is the one in front of you (you just typed the skill there): open it now.
+      // Its agent is the one in front of you (you just typed the skill there), or Immediately:
+      // open it now, once, whichever copy marks the file first (compare-and-swap), so two
+      // watchers (an old copy during a reload, a second window) don't both open it.
       const here = agents().find((x) => x.focused)?.address;
-      if (opensAtOnce() || (here && here === r.agent?.terminal)) openReview(r);
-      else if (toasts()) notify({
-        title: r.kind === "last" ? "Review the last message" : `Review ${r.title ?? "a document"}`,
-        body: `${r.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
-        action: { name: `${MOD}.open-newest` },
-      });
+      if ((opensAtOnce() || (here && here === r.agent?.terminal)) && (await claimAnnounce(r.id))) openReview(r);
     }
   };
   cx.spawn(async () => {
@@ -568,15 +561,6 @@ function watcher(view, cx) {
     focused = now;
     const r = now ? waiting.find((x) => x.agent?.terminal === now) : null;
     if (r) openReview(r);
-  });
-  // The toast's click: the newest review waiting on you.
-  cx.spawn(async () => {
-    try {
-      for (;;) {
-        const c = await nextCommand();
-        if (c === "open-newest") { const r = (await listReviews()).find((x) => x.status === "open"); if (r) openReview(r); else run("mod.open", { name: MOD }); }
-      }
-    } catch { /* reloading */ }
   });
 }
 
@@ -598,20 +582,11 @@ export default class Reviews extends View {
         if (a) await update(String(launch), (r) => ({ ...r, agent: { ...r.agent, pane: a.pane, space: a.space, tab: a.tab, app: r.agent?.app ?? a.app } }));
       });
       cx.spawn(async () => { await publishBadge(); });
-      if (props()?.show || opensAtOnce()) openReview({ id: String(launch) });
-      else if (toasts()) {
-        // Notify me: a toast whose click opens this review (a launcher like this one, with
-        // `show`), and the count on the Reviews button.
-        cx.spawn(async () => {
-          if (!(await claimAnnounce(String(launch)))) return; // the watcher already did
-          const r = (await load(String(launch)))?.review;
-          notify({
-            title: r?.kind === "last" ? "Review the last message" : `Review ${r?.title ?? "a document"}`,
-            body: `${r?.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
-            action: { name: "pane.split", args: { direction: "right", mod: MOD, props: { launch: String(launch), show: true } } },
-          });
-        });
-      }
+      // As the watcher would: now when Immediately, or when its agent is the one in front of you.
+      cx.spawn(async () => {
+        const r = (await load(String(launch)))?.review, here = agents().find((x) => x.focused)?.address;
+        if ((opensAtOnce() || (here && here === r?.agent?.terminal)) && (await claimAnnounce(String(launch)))) openReview({ id: String(launch) });
+      });
       // Reviews never live in a pane any more, so every Reviews pane in the agent's tab is a
       // launcher (this one, or one left over): close them once the new pane exists.
       cx.spawn(async (cx) => {
