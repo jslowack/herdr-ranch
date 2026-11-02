@@ -376,9 +376,10 @@ class ReviewPage {
           .border_color(lit ? t.accent : "#00000000").when(Boolean(marks) || lit, (e) => e.bg(t.selected))
           .when(open, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.focus = null; this.edit(i, cx); }))
           .child(content)
-          .child(v_flex().flex_none().w(52).gap(3).items_end()
-            .child(div().text_size(11).text_color(t.dim).child(b.start === b.end ? String(b.start) : `${b.start}-${b.end}`))
-            .when(Boolean(marks), (e) => e.child(div().px(5).rounded(4).bg(t.accent).text_size(10).text_color(t.accent_foreground).child(marks.join(","))))));
+          // The comment numbers (or 👍) and the source lines, on one line.
+          .child(h_flex().flex_none().min_w(52).gap(5).items_center().justify_end()
+            .when(Boolean(marks), (e) => e.child(div().flex_none().px(5).rounded(4).bg(t.accent).text_size(10).text_color(t.accent_foreground).child(marks.join(","))))
+            .child(div().flex_none().text_size(11).text_color(t.dim).child(b.start === b.end ? String(b.start) : `${b.start}-${b.end}`))));
     };
     const doc = v_flex().id("doc").flex_1().min_w(0).min_h(0).py(12).overflow_y_scrollbar()
       .children(this.blocks.slice(0, MAX_BLOCKS).map((_b, i) => row(i)))
