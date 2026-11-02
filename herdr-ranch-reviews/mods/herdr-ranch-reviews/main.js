@@ -10,7 +10,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
-import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
+import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces, nextCommand } from "herdr";
 import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText, imageOnly } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
@@ -508,11 +508,58 @@ class ReviewPage {
   }
 }
 
+// The watcher: an invisible copy in the layout (`"background": true` in mod.json: the mod-buttons
+// layout gives it a 0 px block with props { background: true }), alive
+// while Herdr runs. It sees a new review arrive in the folder, counts it on the Reviews button,
+// and shows the toast (or opens the review, by setting), so the CLI needs no pane to wake the mod.
+// `ranch-review` checks its heartbeat file and splits a launcher pane only when no watcher runs.
+const HEARTBEAT = ".watcher";
+function watcher(view, cx) {
+  const seen = new Set();
+  const beat = () => writeTextFile(`${DIR()}/${HEARTBEAT}`, new Date().toISOString()).catch(() => null);
+  const scan = async (first) => {
+    const all = await listReviews();
+    await publishBadge(all);
+    for (const r of all.filter((x) => x.status === "open")) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      // The CLI may not have known the agent's space, tab or app: Herdr's agents() does.
+      const a = r.agent?.terminal && !r.agent.space ? agents().find((x) => x.address === r.agent.terminal) : null;
+      if (a) await update(r.id, (x) => ({ ...x, agent: { ...x.agent, pane: a.pane, space: a.space, tab: a.tab, app: x.agent?.app ?? a.app } }));
+      if (first) continue; // already there when Herdr started: counted, not announced
+      if (opensAtOnce()) openReview(r);
+      else notify({
+        title: r.kind === "last" ? "Review the last message" : `Review ${r.title ?? "a document"}`,
+        body: `${r.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
+        action: { name: `${MOD}.open-newest` },
+      });
+    }
+  };
+  cx.spawn(async () => {
+    await exec("mkdir", ["-p", DIR()]).catch(() => null);
+    await beat(); await scan(true);
+    try { for (;;) { const changed = await watchFolder(DIR()); if (changed.some((f) => f.endsWith(".json"))) await scan(false); } } catch { /* reloading */ }
+  });
+  cx.timer.every(20000, () => { beat(); });
+  // The toast's click: the newest review waiting on you.
+  cx.spawn(async () => {
+    try {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "open-newest") { const r = (await listReviews()).find((x) => x.status === "open"); if (r) openReview(r); else run("mod.open", { name: MOD }); }
+      }
+    } catch { /* reloading */ }
+  });
+}
+
 export default class Reviews extends View {
+  watch(cx) { this.watching = true; watcher(this, cx); }
+
   init(_props, cx) {
     // Opened by `ranch-review` as a pane beside the agent: open the review as a dialog, then
     // close that pane again (a mod can't open a dialog from outside).
     if (props()?.settings) { this.settings = true; return; }
+    if (props()?.background) { this.watch(cx); return; }
     const launch = props()?.launch;
     if (launch) {
       this.launched = true;
@@ -571,6 +618,7 @@ export default class Reviews extends View {
 
   render(cx) {
     const t = theme();
+    if (this.watching) return div().size_full();
     if (this.settings) return settingsMenu(t);
     if (this.launched) return div().size_full().bg(t.background);
     return this.page ? this.page.render(t, cx) : this.list.render(t, cx);

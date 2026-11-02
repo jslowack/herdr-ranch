@@ -180,10 +180,17 @@ async function main() {
   const stop = () => { const r = readReview(where); if (r && r.status === "open") { r.waiting = null; writeAtomic(where, r); } process.exit(130); };
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, stop);
 
-  const props = { launch: id }; // the mod opens the review as a dialog
-  const split = agent.pane ? { direction: "right", pane: agent.pane, mod: MOD, props } : { direction: "right", mod: MOD, props };
-  try { herdrApp(["do", "pane.split", JSON.stringify(split)]); }
-  catch (e) { process.stderr.write(`ranch-review: couldn't open the review beside the agent (${e.message.trim()}); open it from Reviews.\n`); }
+  // The mod's watcher (an invisible copy in the mod-buttons layout) sees the new file and shows
+  // the toast. Without a live watcher (its heartbeat is older than a minute), a launcher pane
+  // beside the agent wakes the mod instead, for a moment.
+  let watched = false;
+  try { watched = Date.now() - fs.statSync(path.join(DIR, ".watcher")).mtimeMs < 60000; } catch { /* no watcher */ }
+  if (!watched) {
+    const props = { launch: id };
+    const split = agent.pane ? { direction: "right", pane: agent.pane, mod: MOD, props } : { direction: "right", mod: MOD, props };
+    try { herdrApp(["do", "pane.split", JSON.stringify(split)]); }
+    catch (e) { process.stderr.write(`ranch-review: couldn't open the review beside the agent (${e.message.trim()}); open it from Reviews.\n`); }
+  }
 
   for (;;) {
     await new Promise((r) => setTimeout(r, POLL));
