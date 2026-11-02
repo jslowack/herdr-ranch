@@ -184,6 +184,13 @@ export function lastCodexText(lines) {
   return { cwd, text: null };
 }
 
+// A block as it is copied (right-click): its Markdown, with a quote's "> " markers taken off so
+// a quoted message pastes as the message itself.
+export function copyText(block) {
+  const text = String(block?.text ?? "");
+  return (block?.kind === "quote" ? text.split("\n").map((l) => l.replace(/^\s{0,3}> ?/, "")).join("\n") : text).trim();
+}
+
 // A review id: sortable by time, unique enough for one machine.
 export function newId(now = Date.now(), rand = Math.random) {
   return `${now.toString(36)}-${Math.floor(rand() * 36 ** 6).toString(36).padStart(6, "0")}`;

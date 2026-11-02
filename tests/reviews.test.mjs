@@ -2,7 +2,7 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { copyText, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
 
 const kinds = (md) => splitBlocks(md).map((b) => `${b.kind}:${b.start}-${b.end}`);
 
@@ -87,4 +87,10 @@ test("helpers: quoteOf trims and cuts, stateOf, newId sorts by time", () => {
   assert.equal(stateOf({ status: "open" }), "waiting");
   assert.equal(stateOf(null), "dismissed");
   assert.ok(newId(1.7e12, () => 0.99) < newId(1.7e12 + 1, () => 0));
+});
+
+test("copyText: a quote loses its markers, other blocks stay Markdown", () => {
+  assert.equal(copyText({ kind: "quote", text: "> Hoi [A](https://x)\n>\n> 1. one\n>    more" }), "Hoi [A](https://x)\n\n1. one\n   more");
+  assert.equal(copyText({ kind: "item", text: "- **bold** item" }), "- **bold** item");
+  assert.equal(copyText(null), "");
 });

@@ -11,7 +11,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
-import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago } from "./reviews.js";
+import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
 const fileOf = (id) => `${DIR()}/${id}.json`;
@@ -381,6 +381,12 @@ class ReviewPage {
         .child(h_flex().flex_1().min_w(0).gap(10).items_start().px(10).py(2).rounded(6).border_1()
           .border_color(lit ? t.accent : "#00000000").when(Boolean(marks) || lit, (e) => e.bg(t.selected))
           .when(open, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.focus = null; this.edit(i, cx); }))
+          // Right-click copies the block (text selection is off, see TextView above).
+          .on_mouse_down("right", (_e, cx) => {
+            cx.stop_propagation();
+            cx.write_to_clipboard(copyText(b));
+            notify({ title: `Copied ${lineLabel(b.start, b.end)}`, level: "info", timeout: 2000 });
+          })
           .child(content)
           // The comment numbers (or 👍) and the source lines, on one line.
           .child(h_flex().flex_none().min_w(52).gap(5).items_center().justify_end()
