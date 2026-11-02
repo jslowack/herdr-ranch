@@ -1,6 +1,6 @@
 # Herdr Ranch
 
-![Herdr Ranch: issues, pull requests and your agents' questions next to your terminals](docs/images/social.png)
+![Herdr Ranch: issues, pull requests and reviews next to your terminals](docs/images/social.png)
 
 Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of the space you're in next to its terminals and agents. Plus a layout that gives each of them a button in the tab bar.
 
@@ -47,7 +47,7 @@ More in [the guide](docs/guide.md#pull-requests).
 
 ![Reviews: a document with comments beside it](herdr-ranch-reviews/preview.png)
 
-Comment on a Markdown file or on your agent's last answer, inside Herdr, and send the comments back to the agent. In Claude Code, `/herdr-ranch-annotate <file>` or `/herdr-ranch-last` opens the review beside the agent: click a block to comment, paste a screenshot, give a 👍, then **Send** (⌘⇧↵). The agent gets the same feedback text [Plannotator](https://plannotator.ai) gives, so it replaces `plannotator annotate` and `plannotator last` without a browser. The list shows what waits on you, in this space or all.
+Read what your agent wrote, comment on it in Herdr, and send the comments back to the agent. In Claude Code, type `/herdr-ranch-annotate <file>` for a plan or document the agent wrote to disk, or `/herdr-ranch-last` for the answer it just gave in chat. A toast tells you the review is ready; click it to open the document. Click a block to comment on it, paste a screenshot, or give a 👍, then **Send N comments** (⌘⇧↵). The agent gets one message that quotes each block with your comment, and revises. **Approve as is** tells it to carry on; **Discard** sends nothing. The Reviews button counts what waits on you, in this space or all.
 
 More in [the guide](docs/guide.md#reviews).
 

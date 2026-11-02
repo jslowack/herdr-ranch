@@ -125,8 +125,8 @@ export function formatFeedback(subject, comments) {
   return parts.join("\n");
 }
 
-// What the CLI prints for a finished review, like `plannotator annotate`: the feedback, "The user
-// approved." (or approved with notes), or nothing when the review was dismissed. `json`: one
+// What the CLI prints for a finished review: the feedback, "The user approved.", or nothing when
+// the review was discarded. `json`: one
 // object with `decision`, `feedback` and `annotationCount`.
 export function outcomeText(review, json = false) {
   const r = review?.result ?? { decision: "dismissed" };
@@ -136,8 +136,8 @@ export function outcomeText(review, json = false) {
     if (r.feedback) { o.feedback = r.feedback; o.annotationCount = count; }
     return JSON.stringify(o);
   }
-  if (r.decision === "approved") return r.feedback ? `# Approved with Notes\n\n${r.feedback}` : "The user approved.";
-  if (r.decision === "annotated") return r.feedback || "No changes detected.";
+  if (r.decision === "approved") return "The user approved.";
+  if (r.decision === "annotated") return r.feedback ?? "";
   return "";
 }
 
@@ -182,6 +182,20 @@ export function lastCodexText(lines) {
     if (p.type === "agent_message" && p.message?.trim()) return { cwd, text: p.message.trim() };
   }
   return { cwd, text: null };
+}
+
+// The images of a block that holds nothing else (`![alt](src)` lines, maybe wrapped in a link):
+// [{ alt, src }], or null. Herdr's Markdown view draws nothing for images, so the review shows them
+// itself.
+export function imageOnly(text) {
+  const lines = String(text ?? "").split("\n").filter((l) => l.trim());
+  const out = [];
+  for (const l of lines) {
+    const m = l.trim().match(/^\[?!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)(?:\]\([^)]*\))?$/);
+    if (!m) return null;
+    out.push({ alt: m[1], src: m[2] });
+  }
+  return out.length ? out : null;
 }
 
 // A block as it is copied (right-click): its Markdown, with a quote's "> " markers taken off so

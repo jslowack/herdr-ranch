@@ -2,7 +2,7 @@
 // `ranch-review`, or the /herdr-ranch-annotate and /herdr-ranch-last skills), reviewed natively in Herdr.
 // Two faces of one mod:
 //   - with `props.review` (a pane beside the agent, opened by the CLI): the document rendered
-//     block by block, a comment per block or for the whole document, Send, Approve, Dismiss;
+//     block by block, a comment per block or for the whole document, Send, Approve as is, Discard;
 //   - without it (the Reviews button): the list of reviews, waiting ones first.
 // A review is one file, ~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json. Sending writes
 // the result there: a waiting `ranch-review` prints it to the agent; when nothing waits any
@@ -11,7 +11,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
-import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText } from "./reviews.js";
+import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText, imageOnly } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
 const fileOf = (id) => `${DIR()}/${id}.json`;
@@ -37,14 +37,15 @@ async function update(id, change) {
 }
 
 // Settings, in shared "mod-settings" like the other Herdr Ranch lists (the CLI reads them too):
-//   open: "auto" opens a new review as a dialog at once; "list" only notifies and counts it.
+//   open: "notify" (the default) shows a toast that opens the review, and counts it on the button;
+//         "open" opens the review as a dialog at once. ("auto" and "list" are older names.)
 //   sent: how many sent reviews the list shows ("0" hides them).
 //   scope: "space" (the shown space's reviews) or "all".
 const PREFS = "mod-settings";
 const pref = (key, fallback) => shared(PREFS)?.[MOD]?.[key] ?? fallback;
 const setPref = (key, value) => { const all = shared(PREFS) ?? {}; setShared(PREFS, { ...all, [MOD]: { ...all[MOD], [key]: value } }); };
 const SETTINGS = [
-  { key: "open", label: "New review", choices: [["auto", "Open it"], ["list", "Notify only"]], fallback: "auto" },
+  { key: "open", label: "New review", choices: [["notify", "Notify me"], ["open", "Open it"]], fallback: "notify" },
   { key: "sent", label: "Sent shown", choices: [["0", "None"], ["10", "10"], ["25", "25"], ["50", "50"]], fallback: "10" },
 ];
 const openSettings = () => openOverlay({ mod: MOD, kind: "popup", width: 300, props: { settings: true } });
@@ -71,6 +72,15 @@ function inSpace(r, space, repos) {
   if (mine && r.repo && r.repo === mine) return true;
   const name = worktreeRepo(r.cwd);
   return Boolean(name && space.folder && (space.folder.endsWith(`/${name}`) || worktreeRepo(`${space.folder}/`) === name));
+}
+
+const opensAtOnce = () => ["open", "auto"].includes(pref("open", "notify"));
+
+// The count on the Reviews button (mod-buttons): open reviews.
+async function publishBadge(reviews = null) {
+  const count = (reviews ?? (await listReviews())).filter((r) => r.status === "open").length;
+  const all = shared("mod-badges") ?? {};
+  if ((all[MOD] ?? 0) !== count) setShared("mod-badges", { ...all, [MOD]: count });
 }
 
 const alive = async (pid) => Number.isInteger(pid) && (await exec("kill", ["-0", String(pid)]).then((r) => r.code === 0, () => false));
@@ -109,17 +119,10 @@ class ReviewList {
     this.loading = true;
     cx.spawn(async (cx) => {
       try { this.reviews = await listReviews(); } finally {
-        this.loading = false; this.publishBadge(); cx.notify();
+        this.loading = false; publishBadge(this.reviews); cx.notify();
         if (this.again) { this.again = false; this.refresh(cx); }
       }
     });
-  }
-
-  publishBadge() {
-    const count = this.reviews.filter((r) => r.status === "open").length;
-    const all = shared("mod-badges") ?? {};
-    if ((all[MOD] ?? 0) === count) return;
-    setShared("mod-badges", { ...all, [MOD]: count });
   }
 
   remove(review, cx) {
@@ -149,7 +152,7 @@ class ReviewList {
       const color = last ? t.ansi4 : t.ansi5;
       const badge = state === "waiting" ? pill(r.waiting ? "agent waiting" : "waiting", t.ansi3)
         : state === "undelivered" ? pill("not delivered", t.ansi1)
-        : state === "approved" ? pill("approved", t.ansi2) : state === "sent" ? pill("feedback sent", t.ansi2) : pill("dismissed", t.dim);
+        : state === "approved" ? pill("approved", t.ansi2) : state === "sent" ? pill("feedback sent", t.ansi2) : pill("discarded", t.dim);
       const comments = (r.result?.comments ?? []).length;
       const meta = [r.agent?.app ?? "agent", `${state === "waiting" ? "asked" : "done"} ${ago(r.finishedAt ?? r.createdAt)} ago`, comments ? `${comments} comment${comments === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
       const x = asking
@@ -283,6 +286,31 @@ class ReviewPage {
     this.saveDraft(cx); cx.notify();
   }
 
+  // An image a block shows: copied next to the reviews (a mod shows images from Herdr's folder
+  // only), with its size for a width of at most 640 px. null while loading, or for a web image or a
+  // missing file (the block then shows its description).
+  picture(src, cx) {
+    this.pictures ??= new Map();
+    if (this.pictures.has(src)) return this.pictures.get(src);
+    this.pictures.set(src, null);
+    const r = this.review;
+    if (!r || /^[a-z]+:/i.test(src) || !/\.(png|jpe?g|gif|webp|svg)$/i.test(src)) return null;
+    const file = r.kind === "file" && r.path ? (r.path.startsWith("/") ? r.path : `${r.cwd}/${r.path}`) : `${r.cwd}/x`;
+    const abs = src.startsWith("/") ? src : `${file.slice(0, file.lastIndexOf("/"))}/${src}`;
+    let h = 0; for (const ch of abs) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const rel = `data/${MOD}/img/view-${h.toString(36)}${abs.slice(abs.lastIndexOf("."))}`;
+    cx.spawn(async (cx) => {
+      const cp = await exec("cp", [abs, `${appHome()}/${rel}`]).catch(() => null);
+      if (cp?.code !== 0) return;
+      const size = await exec("sips", ["-g", "pixelWidth", "-g", "pixelHeight", abs]).catch(() => null);
+      const pw = Number(size?.stdout.match(/pixelWidth: (\d+)/)?.[1]) || 640, ph = Number(size?.stdout.match(/pixelHeight: (\d+)/)?.[1]) || 320;
+      const w = Math.min(640, pw), hh = Math.round((ph * w) / pw);
+      this.pictures.set(src, { rel, w, h: hh });
+      cx.notify();
+    });
+    return null;
+  }
+
   // Highlights the block a comment is on.
   reveal(block) {
     if (block == null) return;
@@ -308,7 +336,7 @@ class ReviewPage {
   refocus() { try { this.handle?.focus(); } catch { /* not shown yet */ } }
   removeComment(key, cx) { this.comments = this.comments.filter((c) => c.key !== key); this.saveDraft(cx); cx.notify(); }
 
-  // Send (decision "annotated"), Approve ("approved", with any comments as notes) or Dismiss.
+  // Send (decision "annotated"), Approve as is ("approved") or Discard ("dismissed").
   finish(decision, cx) {
     if (this.busy || !this.review) return;
     if (this.editing) this.saveEdit(cx);
@@ -326,8 +354,8 @@ class ReviewPage {
       const waiting = await alive(done.waiting?.pid);
       if (!waiting && decision !== "dismissed") await this.paste(done, cx);
       else if (!waiting) await exec("rm", ["-f", fileOf(this.id)]).catch(() => null);
-      else if (waiting) notify({ title: decision === "approved" ? "Approved" : decision === "dismissed" ? "Review dismissed" : "Feedback sent", body: done.title, level: "success", timeout: 3000 });
-      this.busy = false; cx.notify();
+      else if (waiting) notify({ title: decision === "approved" ? "Approved" : decision === "dismissed" ? "Review discarded" : "Feedback sent", body: done.title, level: "success", timeout: 3000 });
+      this.busy = false; cx.notify(); publishBadge().catch(() => null);
       if (done.delivery !== "kept") closeSelf();
     });
   }
@@ -397,7 +425,14 @@ class ReviewPage {
     const row = (i) => {
       const b = this.blocks[i], marks = counted.get(i), item = b.kind === "item";
       const lit = this.editing?.block === i || this.focus === i;
-      const content = this.source || b.kind === "frontmatter"
+      const pics = this.source ? null : imageOnly(b.text);
+      const content = pics
+        ? v_flex().flex_1().min_w(0).gap(6).children(pics.map((p, k) => {
+          const got = this.picture(p.src, cx);
+          return got ? image(got.rel).w(got.w).h(got.h).rounded(4)
+            : div().id(`pic-${i}-${k}`).text_size(13).text_color(t.dim).child(`🖼 ${p.alt || p.src}`);
+        }))
+        : this.source || b.kind === "frontmatter"
         ? v_flex().flex_1().min_w(0).text_size(12).text_color(t.foreground).children(b.text.split("\n").map((l, k) => div().id(`s-${i}-${k}`).min_h(16).child(l || " ")))
         : div().flex_1().min_w(0).text_size("15px").line_height("24px").child(TextView.markdown(`b-${i}`, b.text).selectable(false));
       return h_flex().id(`blk-${i}`).w_full().gap(10).items_start().px(30).py(b.kind === "heading" ? 10 : item ? 1 : 6)
@@ -454,7 +489,7 @@ class ReviewPage {
         .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => this.edit(null, cx)).child("+ General comment")))
       .when(!n && !this.editing && open, (e) => e.child(div().p(4).text_size(11).text_color(t.dim).child("Click a block to comment on it.")))
       .when(!open, (e) => e.child(div().p(4).text_size(12).text_color(t.dim).child(
-        r.status === "dismissed" ? "Dismissed." : stateOf(r) === "undelivered" ? "The agent didn't take this feedback: copy it above." : r.delivery === "pasted" ? "Sent: pasted into the agent." : "Sent to the agent.")))
+        r.status === "dismissed" ? "Discarded." : stateOf(r) === "undelivered" ? "The agent didn't take this feedback: copy it above." : r.delivery === "pasted" ? "Sent: pasted into the agent." : "Sent to the agent.")))
       .when(Boolean(this.note), (e) => e.child(div().p(4).text_size(12).text_color(t.ansi1).child(this.note)));
 
     if (!this.focused && this.handle) { this.focused = true; this.refocus(); }
@@ -487,16 +522,20 @@ export default class Reviews extends View {
         const a = term ? agents().find((x) => x.address === term) : null;
         if (a) await update(String(launch), (r) => ({ ...r, agent: { ...r.agent, pane: a.pane, space: a.space, tab: a.tab, app: r.agent?.app ?? a.app } }));
       });
-      if (pref("open", "auto") === "list") {
-        // Notify only: a toast that opens the list, and the count on the button.
+      cx.spawn(async () => { await publishBadge(); });
+      if (props()?.show || opensAtOnce()) openReview({ id: String(launch) });
+      else {
+        // Notify me: a toast whose click opens this review (a launcher like this one, with
+        // `show`), and the count on the Reviews button.
         cx.spawn(async () => {
           const r = (await load(String(launch)))?.review;
-          const all = await listReviews();
-          const badges = shared("mod-badges") ?? {};
-          setShared("mod-badges", { ...badges, [MOD]: all.filter((x) => x.status === "open").length });
-          notify({ title: r?.kind === "last" ? "Review the last message" : `Review ${r?.title ?? "a document"}`, body: `${r?.agent?.app ?? "An agent"} is waiting on you.`, level: "info", timeout: 8000, action: { name: "mod.open", args: { name: MOD } } });
+          notify({
+            title: r?.kind === "last" ? "Review the last message" : `Review ${r?.title ?? "a document"}`,
+            body: `${r?.agent?.app ?? "An agent"} is waiting on you. Click to open it.`, level: "info", timeout: 30000,
+            action: { name: "pane.split", args: { direction: "right", mod: MOD, props: { launch: String(launch), show: true } } },
+          });
         });
-      } else openReview({ id: String(launch) });
+      }
       // Reviews never live in a pane any more, so every Reviews pane in the agent's tab is a
       // launcher (this one, or one left over): close them once the new pane exists.
       cx.spawn(async (cx) => {

@@ -35,7 +35,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 
 | Flag | What it does |
 |---|---|
-| none | Links the three mods into `~/.config/herdr-app/mods` (or `$HERDR_APP_HOME/mods`). A name already taken by a real folder is skipped. |
+| none | Links the three mods into `~/.config/herdr-app/mods` (or `$HERDR_APP_HOME/mods`), `ranch-review` into `~/.local/bin`, and the Reviews skills into `~/.claude/skills`. A name already taken by a real file or folder is skipped. |
 | `--layout` | Also copies the mod-buttons layout. A layout file you changed is kept as `<name>.json.bak`. |
 | `--update` | Moves the clone to the latest release, then installs as before (the layout too when it's installed) and reloads the panels. |
 

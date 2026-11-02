@@ -2,7 +2,7 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyText, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { imageOnly, copyText, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
 
 const kinds = (md) => splitBlocks(md).map((b) => `${b.kind}:${b.start}-${b.end}`);
 
@@ -93,4 +93,11 @@ test("copyText: a quote loses its markers, other blocks stay Markdown", () => {
   assert.equal(copyText({ kind: "quote", text: "> Hoi [A](https://x)\n>\n> 1. one\n>    more" }), "Hoi [A](https://x)\n\n1. one\n   more");
   assert.equal(copyText({ kind: "item", text: "- **bold** item" }), "- **bold** item");
   assert.equal(copyText(null), "");
+});
+
+test("imageOnly: a block of only images, linked or titled; anything else is null", () => {
+  assert.deepEqual(imageOnly("![Issues: the list](herdr-ranch-issues/preview.png)"), [{ alt: "Issues: the list", src: "herdr-ranch-issues/preview.png" }]);
+  assert.deepEqual(imageOnly('[![a](x.png "t")](https://e.x)\n![b](y.png)'), [{ alt: "a", src: "x.png" }, { alt: "b", src: "y.png" }]);
+  assert.equal(imageOnly("Text with ![a](x.png) inside"), null);
+  assert.equal(imageOnly(""), null);
 });

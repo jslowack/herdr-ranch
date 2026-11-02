@@ -45,7 +45,7 @@ function repoOf(dir) {
 
 function agentPane() {
   const terminal = process.env.HC_TERMINAL_ID;
-  if (!terminal) fail("run this from an agent in a Herdr app terminal (HC_TERMINAL_ID isn't set).");
+  if (!terminal) fail("run this inside a Herdr terminal, from the agent that asks for the review (HC_TERMINAL_ID isn't set).");
   let ls;
   try { ls = JSON.parse(herdrApp(["ls"])); } catch (e) { fail(`can't ask Herdr for the panes: ${e.message}`); }
   for (const space of ls?.spaces ?? []) for (const tab of space.tabs ?? []) for (const t of tab.terminals ?? []) {
@@ -132,14 +132,28 @@ function prune() {
   }
 }
 
+const HELP = `ranch-review: ask for a review in Herdr, and wait for the answer.
+
+  ranch-review annotate <file.md>   review a Markdown file
+  ranch-review last                 review the agent's last answer (Claude Code, Codex)
+  ranch-review last --stdin         review the text on stdin (any agent)
+  --json                            print {"decision", "feedback", "annotationCount"}
+
+The review opens in Herdr's Reviews mod. This command waits until you send, approve or
+discard it, then prints the feedback, "The user approved.", or nothing (discarded).
+Run it in a Herdr terminal. Exit: 0 answered, 2 couldn't start, 130 stopped (the
+feedback is then typed into the agent's prompt once it's idle).
+`;
+
 async function main() {
   const args = process.argv.slice(2), json = args.includes("--json"), stdin = args.includes("--stdin");
   const [cmd, target] = args.filter((a) => !a.startsWith("--"));
-  if (!cmd || cmd === "help" || args.includes("--help")) {
-    process.stdout.write("Usage: ranch-review annotate <file.md> [--json]\n       ranch-review last [--stdin] [--json]\n");
-    return 0;
-  }
-  if (cmd !== "annotate" && cmd !== "last") fail(`unknown command ${cmd}`);
+  if (cmd === "help" || args.includes("--help") || args.includes("-h")) { process.stdout.write(HELP); return 0; }
+  if (!cmd) { process.stderr.write(HELP); return 2; }
+  if (cmd !== "annotate" && cmd !== "last") fail(`unknown command ${cmd}; see ranch-review --help`);
+  const known = cmd === "last" ? ["--json", "--stdin"] : ["--json"];
+  const odd = args.filter((a) => a.startsWith("-") && !known.includes(a));
+  if (odd.length) fail(`${cmd} doesn't take ${odd.join(" ")}; see ranch-review --help`);
   const agent = agentPane();
   let text, file = null, title;
   if (cmd === "annotate") {
