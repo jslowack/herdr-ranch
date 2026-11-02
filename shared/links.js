@@ -363,17 +363,26 @@ export function avatar(name, t, size = 18) {
 // GitHub avatars: Herdr shows images only from the app's folder, so each login's picture
 // is downloaded there once per session. Until then, and when it fails, the initials show.
 // `avatarPics`: the logins downloaded so far; the list hands them to its page dialog.
-const AVATARS = "data/herdr-ranch/avatars";
+const AVATARS = "data/herdr-ranch/avatars", AT_ONCE = 4;
 export const avatarPics = new Set();
 const pics = avatarPics, asked = new Set();
-// True when a picture arrived: redraw then. Only plain logins, so not bots ("app/dependabot").
-// A failed download is tried again on the next call.
-export async function loadAvatars(logins) {
+// True when a picture arrived: redraw then. Only plain logins, so not bots ("app/dependabot"),
+// and only for a pull request on github.com (`url`): an Enterprise login can name someone
+// else on github.com. Each login is asked once per session; a failure keeps its initials.
+// At most AT_ONCE downloads run at a time.
+export async function loadAvatars(logins, url) {
+  if (!/^https:\/\/github\.com\//.test(url ?? "")) return false;
   const todo = [...new Set(logins)].filter((l) => /^[A-Za-z0-9-]+$/.test(l ?? "") && !asked.has(l) && !pics.has(l));
   for (const l of todo) asked.add(l);
-  const got = await Promise.all(todo.map((l) => exec("curl", ["-fsSL", "--create-dirs", "-o", `${appHome()}/${AVATARS}/${l}.png`, `https://github.com/${l}.png?size=64`])
-    .then((r) => r.code === 0, () => false).then((ok) => { (ok ? pics.add(l) : asked.delete(l)); return ok; })));
-  return got.includes(true);
+  let got = false;
+  const next = async () => {
+    for (let l; (l = todo.shift()) !== undefined;) {
+      const r = await exec("curl", ["-fsSL", "--create-dirs", "-o", `${appHome()}/${AVATARS}/${l}.png`, `https://github.com/${l}.png?size=64`]).catch(() => null);
+      if (r?.code === 0) { pics.add(l); got = true; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(AT_ONCE, todo.length) }, next));
+  return got;
 }
 
 // One segmented control: "All" and the filters, one picked at a time.

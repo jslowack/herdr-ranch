@@ -179,7 +179,7 @@ export default class PullRequests extends View {
         // Stored when the list or where it comes from changed.
         const meta = JSON.stringify({ at, login });
         if (this.setPrs(prs) || meta !== this.meta) { this.meta = meta; remember(space.id, { where: at, login, prs }); }
-        cx.spawn(async (cx) => { if (await loadAvatars(prs.map((p) => p.author?.login))) try { cx.notify(); } catch { /* shown on the next change */ } });
+        cx.spawn(async (cx) => { if (await loadAvatars(prs.map((p) => p.author?.login), prs[0]?.url)) try { cx.notify(); } catch { /* shown on the next change */ } });
         this.publishBadge(space);
         if (this.filter === "mentioned") this.loadMentions(cx);
       } catch (e) { if (current()) { this.error = String(e?.message ?? e); this.publishBadge(space, 0); } }
@@ -254,7 +254,7 @@ export default class PullRequests extends View {
         const page = await this.fetchPage(number, where);
         if (still()) { this.page = page; this.pageError = null; }
         const people = [page.author?.login, ...page.conversation.map((c) => c.who), ...(page.reviewers ?? []).map((r) => r.login), ...(page.assignees ?? [])];
-        cx.spawn(async (cx) => { if (await loadAvatars(people)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
+        cx.spawn(async (cx) => { if (await loadAvatars(people, page.url)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
       } catch (e) { if (still() && !this.page) this.pageError = String(e?.message ?? e); }
       cx.notify(this.pageView);
     });
