@@ -356,8 +356,8 @@ export function avatar(name, t, size = 18) {
   const tinted = base.bg(c + "2e").text_color(c).child(initials(name));
   if (!pics.has(name)) return tinted;
   return Avatar.new().size(size).flex_none().rounded_full().overflow_hidden()
-    .image(AvatarImage.new(`${AVATARS}/${name}.png`).size_full())
-    .fallback(AvatarFallback.new().size_full().child(tinted));
+    .image(AvatarImage.new(`${AVATARS}/${name}.png`).size_full().rounded_full())
+    .fallback(AvatarFallback.new().size_full().rounded_full().child(tinted));
 }
 
 // GitHub avatars: Herdr shows images only from the app's folder, so each login's picture
