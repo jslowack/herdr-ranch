@@ -323,13 +323,13 @@ export default class PullRequests extends View {
       const loose = shown.filter((p) => !this.inStack.has(p.number));
       const groups = GROUPS.map(([id, label]) => ({ id, label, stacks: stacks.filter((s) => s.group === id), prs: loose.filter((p) => p.group === id) }))
         .filter((g) => g.stacks.length || g.prs.length);
-      const layers = (s) => (this.collapsed.has(s.key) ? [] : s.layers.map((l, n) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: n + 1, dim: !passing.has(l.number) })));
+      const layers = (s) => (this.folded(s) ? [] : s.layers.map((l, n) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: n + 1, dim: !passing.has(l.number) })));
       // The pull request of the shown branch, pinned on top (it stays in its own group too).
       // Only a branch of this repository (a fork's "main" isn't yours), and only when it passes the search and filter.
       const mine = branch && shown.find((p) => p.headRefName === branch && p.state === "OPEN" && !p.fork);
       const items = [...(mine ? [{ key: "group-here", group: { label: "This branch", count: "1" } }, { key: `here-${mine.number}`, data: this.data.get(mine.number) }] : []), ...groups.flatMap((g) => [
         { key: `group-${g.id}`, group: { label: g.label, count: String(g.stacks.length + g.prs.length) } },
-        ...g.stacks.flatMap((s) => [{ key: s.key, stack: s, open: !this.collapsed.has(s.key) }, ...layers(s)]),
+        ...g.stacks.flatMap((s) => [{ key: s.key, stack: s, open: !this.folded(s) }, ...layers(s)]),
         ...g.prs.map((pr) => ({ key: `pr-${pr.number}`, data: this.data.get(pr.number) })),
       ])];
       // Up and Down step through the rows in order: loose pull requests and the layers of open stacks.
@@ -505,14 +505,18 @@ export default class PullRequests extends View {
       .when(local, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => this.startStack(st)))
       .child("Review with agent");
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
-      .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
+      .on_click((_e, cx) => this.toggleStack(st, cx)).child(i.open ? "▾" : "▸");
     const pill = icon("stack", t.ansi4);
     const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
     const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
     return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(actions);
   }
 
-  toggleStack(key, cx) {
+  // Collapsed stacks are kept per repository: stack numbers repeat across repositories.
+  foldKey(stack) { return `${this.where?.github ?? ""}#${stack.key}`; }
+  folded(stack) { return this.collapsed.has(this.foldKey(stack)); }
+  toggleStack(stack, cx) {
+    const key = this.foldKey(stack);
     if (this.collapsed.has(key)) this.collapsed.delete(key); else this.collapsed.add(key);
     cx.notify();
   }
