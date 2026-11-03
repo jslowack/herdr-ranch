@@ -6,8 +6,8 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
-import { stacks, stackOf } from "./stacks.js";
+import { me, list, mentioned, hasGhStack, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { stacks, stackOf, stackAgent } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
@@ -178,6 +178,8 @@ export default class PullRequests extends View {
         const meta = JSON.stringify({ at, login });
         if (this.setPrs(prs) || meta !== this.meta) { this.meta = meta; remember(space.id, { where: at, login, prs }); }
         cx.spawn(async (cx) => { if (await loadAvatars(prs.map((p) => p.author?.login), prs[0]?.url)) try { cx.notify(); } catch { /* shown on the next change */ } });
+        // Fix stack to merge needs the gh stack extension on this machine (asked once per machine).
+        if (this.stacks.length) cx.spawn(async (cx) => { const has = await hasGhStack(at); if (current() && has !== this.ghStack) { this.ghStack = has; try { cx.notify(); } catch { /* shown on the next change */ } } });
         this.publishBadge(space);
         if (this.filter === "mentioned") this.loadMentions(cx);
       } catch (e) { if (current()) { this.error = String(e?.message ?? e); this.publishBadge(space, 0); } }
@@ -358,6 +360,18 @@ export default class PullRequests extends View {
       vars: { number: pr.number, title: pr.title, url: pr.url, head: pr.headRefName ?? "", base: pr.baseRefName ?? "", body: pr.body ?? "", failing: failing.join(", ") || "none", repo: this.where.github },
       branches: { review: `agent/review-${tail}`, comments: `agent/fix-${tail}`, checks: `agent/checks-${tail}` },
       tabs: { review: `Review #${pr.number} ${pr.title}`.slice(0, 60), comments: `Fix #${pr.number} ${pr.title}`.slice(0, 60), checks: `Checks #${pr.number} ${pr.title}`.slice(0, 60) },
+    });
+  }
+
+  // One agent on a whole stack, opened on the picked mode. Without gh stack, Fix says how to get it.
+  startStack(stack, mode) {
+    if (mode === "stack-fix" && this.ghStack === false) {
+      notify({ title: "Needs gh stack", body: "Install it with: gh extension install github/gh-stack", level: "info", timeout: 6000 });
+      return;
+    }
+    openAgentDialog("herdr-ranch-prs", {
+      kind: "stack", mode, repo: this.where.repo.main, on: this.where.on, icon: "pr", fork: false, ghStack: this.ghStack !== false,
+      ...stackAgent(stack, new Map(this.prs.map((p) => [p.number, p])), this.where.github),
     });
   }
 

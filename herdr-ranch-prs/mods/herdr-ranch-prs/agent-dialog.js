@@ -83,7 +83,8 @@ export class AgentDialog extends View {
     // "Fix failing checks" only when a check fails.
     // "Fix stack to merge" only with the gh stack extension.
     this.modes = MODES[this.kind].filter(([id]) => (id !== "checks" || (p.vars?.failing && p.vars.failing !== "none")) && (id !== "stack-fix" || p.ghStack !== false));
-    this.mode = this.modes[0][0];
+    // The mode the list picked (a stack row's Review or Fix), else the first.
+    this.mode = this.modes.some(([id]) => id === p.mode) ? p.mode : this.modes[0][0];
     this.agents = []; this.agent = null; this.busy = false; this.error = "";
     this.repoTemplates = {}; this.mine = userPrompts(p.mod);
     this.editing = false; this.edited = false; this.stay = false;
@@ -267,7 +268,7 @@ export class AgentDialog extends View {
     else if (sp !== this.openSpace && !this.busy) { try { cx.timer.after(0, () => this.close()); } catch { /* next change */ } }
     const branch = this.branch.value().trim();
     const modes = this.modes;
-    const verb = this.kind === "pr" ? (this.mode === "review" ? "Start review" : "Start agent") : "Start agent";
+    const verb = this.mode === "review" || this.mode === "stack-review" ? "Start review" : "Start agent";
     const agentCard = (a) => {
       const on = this.agent === a, ok = a.installed;
       return h_flex().id(`agent-${a.name}`).gap(8).items_center().px(10).py(7).rounded(8).min_w(150)
@@ -285,7 +286,7 @@ export class AgentDialog extends View {
         if (e.key === "escape") { this.close(); cx.stop_propagation(); }
         if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control)) { this.start(cx); cx.stop_propagation(); }
       })
-      .child(ui.header(this.kind === "pr" && this.mode === "review" ? "Review with agent" : "Start agent", h_flex().gap(6).items_center().min_w(0).text_size(fs.meta)
+      .child(ui.header(this.mode === "review" || this.mode === "stack-review" ? "Review with agent" : "Start agent", h_flex().gap(6).items_center().min_w(0).text_size(fs.meta)
         .when(Boolean(p.icon), (e) => e.child(icon(p.icon, kindColor(p.icon, t), 14)))
         .when(Boolean(p.key), (e) => e.child(div().flex_none().text_color(t.dim).child(p.key)))
         .child(div().min_w(0).truncate().font_semibold().child(p.title ?? ""))))
