@@ -35,11 +35,12 @@ const KEPT = ["where", "login", "prs", "data", "hay", "stacks", "inStack", "save
 // What a row draws, worked out once per load: the row renderer runs inside layout, twice
 // for every frame Herdr draws (hover, scrolling, any spinner on screen), so it only reads.
 // Pills are [text, theme color] pairs.
-// A review verdict worth a pill; waiting for review is the usual state and gets none.
+// Where an open pull request is in review, as one pill: a draft, waiting for a review, or the verdict.
+// The same on every row, so a stack's layers say for themselves which one holds the stack up.
 const REVIEW = { APPROVED: ["approved", "ansi2"], CHANGES_REQUESTED: ["changes", "ansi1"] };
 function rowData(pr) {
   const c = pr.checks, pills = [];
-  if (REVIEW[pr.reviewDecision]) pills.push(REVIEW[pr.reviewDecision]);
+  if (pr.state === "OPEN") pills.push(pr.isDraft ? ["draft", "muted"] : REVIEW[pr.reviewDecision] ?? ["needs review", "ansi3"]);
   // The checks as one icon and a count: failing first, then running, then passing.
   const checks = c.fail > 0 ? ["x", c.fail] : c.pending > 0 ? ["pending", c.pending] : c.pass > 0 ? ["check", c.pass] : null;
   const state = pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.isDraft ? "draft" : "pr";
@@ -495,29 +496,23 @@ export default class PullRequests extends View {
   }
 
   // A stack's own row: the chevron (collapses its layers), a `stack` pill, its name (the bottom
-  // layer's title), where it merges, what blocks it, and the two agent actions. The actions
-  // always show: Herdr runs no script on hover, so they can't appear only then.
+  // layer's title) and the two agent actions. The layers under it show their own status. The
+  // actions always show: Herdr runs no script on hover, so they can't appear only then.
   stackRow(i, s) {
-    // An agent needs this repository's main checkout (like Review with agent on a page); narrow, the labels are short.
-    const t = s.t, st = i.stack, ready = st.blocker === "ready to merge", local = Boolean(this.where?.repo), fixOk = local && this.ghStack !== false;
+    // An agent needs this repository's main checkout (like Review with agent on a page).
+    const t = s.t, st = i.stack, local = Boolean(this.where?.repo), fixOk = local && this.ghStack !== false;
     const button = (id, label, primary, enabled, click) => div().id(id).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
       .border_color(primary && enabled ? t.ansi2 : t.border).text_color(!enabled ? t.muted : primary ? t.ansi2 : t.foreground)
       .when(enabled || this.ghStack === false, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click((_e, cx) => click(cx))).child(label);
     const actions = h_flex().flex_none().gap(4)
-      .child(button(`${st.key}-review`, s.two ? "Review" : "Review stack", false, local, () => this.startStack(st, "stack-review")))
-      .child(button(`${st.key}-fix`, !local || this.ghStack !== false ? (s.two ? "Fix" : "Fix stack to merge") : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
+      .child(button(`${st.key}-review`, "Review", false, local, () => this.startStack(st, "stack-review")))
+      .child(button(`${st.key}-fix`, !local || this.ghStack !== false ? "Fix" : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
       .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
     const pill = div().px(6).py(1).flex_none().rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t.ansi4).child("stack");
     const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
-    const into = div().flex_none().text_size(fs.meta).text_color(t.dim).child(`${st.layers.length} PRs into ${st.trunk}`);
-    const blocker = div().text_size(fs.meta).text_color(ready ? t.ansi2 : t.ansi1).when(s.two, (e) => e.flex_1().min_w(0).truncate()).when(!s.two, (e) => e.flex_none()).child(st.blocker);
     const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
-    // Narrow (the side panel): the name and where it merges first, then the blocker (cut to fit) and short actions.
-    if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
-      .child(h_flex().gap(8).items_center().child(chevron).child(pill).child(name).child(into))
-      .child(h_flex().pl(22).gap(8).items_center().child(blocker).child(actions));
-    return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(into).child(blocker).child(actions);
+    return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(actions);
   }
 
   toggleStack(key, cx) {

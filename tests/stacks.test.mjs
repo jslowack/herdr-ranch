@@ -69,20 +69,6 @@ test("stacks: the group is the least ready layer", async () => {
   for (const [name, open, group] of cases) assert.equal((await found(open))[0].group, group, name);
 });
 
-test("stacks: the blocker names the first layer that isn't ready, bottom up", async () => {
-  const cases = [
-    ["draft", pr(2, "b1", { isDraft: true, statusCheckRollup: [failed] }), "#2 is a draft"],
-    ["failing", pr(2, "b1", { statusCheckRollup: [failed], reviewDecision: "CHANGES_REQUESTED" }), "#2 ✗ 1 blocks merge"],
-    ["changes requested", pr(2, "b1", { reviewDecision: "CHANGES_REQUESTED", statusCheckRollup: [running] }), "#2 changes requested"],
-    ["running", pr(2, "b1", { statusCheckRollup: [running] }), "#2 checks running"],
-    ["waits on review", pr(2, "b1"), "#2 waits on review"],
-    ["all ready", ready(2, "b1"), "ready to merge"],
-  ];
-  for (const [name, second, blocker] of cases) {
-    assert.equal((await found([ready(1, "main"), second, pr(3, "b2", { isDraft: true })].slice(0, name === "all ready" ? 2 : 3)))[0].blocker, blocker, name);
-  }
-});
-
 // The gh stack check and what Start agent gets for a stack.
 import { hasGhStack, hash } from "../herdr-ranch-prs/mods/herdr-ranch-prs/data.js";
 import { stackAgent } from "../herdr-ranch-prs/mods/herdr-ranch-prs/stacks.js";

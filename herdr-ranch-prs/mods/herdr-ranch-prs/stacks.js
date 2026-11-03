@@ -8,17 +8,6 @@ import { hash, slug } from "./data.js";
 // merged layer is no longer part of what still has to merge.
 const member = (pr) => pr.state === "OPEN" && !pr.fork;
 
-const isReady = (pr) => !pr.isDraft && pr.reviewDecision === "APPROVED" && pr.checks.fail === 0 && pr.checks.pending === 0;
-
-// What keeps a layer from merging, checked in this order.
-function blockerOf(pr) {
-  if (pr.isDraft) return `#${pr.number} is a draft`;
-  if (pr.checks.fail > 0) return `#${pr.number} ✗ ${pr.checks.fail} blocks merge`;
-  if (pr.reviewDecision === "CHANGES_REQUESTED") return `#${pr.number} changes requested`;
-  if (pr.checks.pending > 0) return `#${pr.number} checks running`;
-  return `#${pr.number} waits on review`;
-}
-
 // The group of the least ready layer: your review first, then yours to fix, then ready only
 // when every layer is.
 function groupOf(prs) {
@@ -28,7 +17,7 @@ function groupOf(prs) {
   return prs.every((p) => p.group === "ready") ? "ready" : "open";
 }
 
-// stacks(prs) -> [{ key, name, trunk, layers: [{ number, level }], group, blocker }], layers
+// stacks(prs) -> [{ key, name, trunk, layers: [{ number, level }], group }], layers
 // bottom first (depth-first, children by number), level from 1.
 export function stacks(prs) {
   const open = prs.filter(member);
@@ -52,11 +41,10 @@ export function stacks(prs) {
     walk(root, 1);
     if (layers.length < 2) continue;
     const members = layers.map((l) => l.pr);
-    const first = members.find((p) => !isReady(p));
     out.push({
       key: `stack-${root.number}`, name: root.title, trunk: root.baseRefName,
       layers: layers.map((l) => ({ number: l.pr.number, level: l.level })),
-      group: groupOf(members), blocker: first ? blockerOf(first) : "ready to merge",
+      group: groupOf(members),
     });
   }
   return out;
