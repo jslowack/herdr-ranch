@@ -1,11 +1,11 @@
 ---
-name: herdr-ranch-annotate
+name: herdr-ranch-review
 description: Open a Markdown file for review in Herdr (the Reviews mod, beside your pane) and then respond to the returned comments.
 allowed-tools: Bash(ranch-review:*)
 disable-model-invocation: true
 ---
 
-# Herdr Ranch Annotate
+# Herdr Ranch Review
 
 ## Review
 

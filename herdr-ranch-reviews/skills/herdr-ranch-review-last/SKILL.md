@@ -1,11 +1,11 @@
 ---
-name: herdr-ranch-last
+name: herdr-ranch-review-last
 description: Open your latest message for review in Herdr (the Reviews mod, beside your pane) and use the returned comments to revise it or continue.
 allowed-tools: Bash(ranch-review:*)
 disable-model-invocation: true
 ---
 
-# Herdr Ranch Last
+# Herdr Ranch Review Last
 
 ## Review
 

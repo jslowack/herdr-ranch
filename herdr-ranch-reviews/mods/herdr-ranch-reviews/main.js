@@ -1,5 +1,5 @@
 // Reviews: the Markdown files and last messages your agents asked you to review (with
-// `ranch-review`, or the /herdr-ranch-annotate and /herdr-ranch-last skills), reviewed natively in Herdr.
+// `ranch-review`, or the /herdr-ranch-review and /herdr-ranch-review-last skills), reviewed natively in Herdr.
 // Two faces of one mod:
 //   - with `props.review` (a pane beside the agent, opened by the CLI): the document rendered
 //     block by block, a comment per block or for the whole document, Send, Approve as is, Discard;
@@ -199,7 +199,7 @@ class ReviewList {
         .when(!waiting.length && (!limit || !done.length) && this.reviews.length > 0 && !this.loading, (e) => e.child(div().p(12).text_color(t.dim)
           .child(space ? "Nothing waiting on you in this space." : "Nothing waiting on you.")))
         .when(!this.reviews.length, (e) => e.child(div().p(12).text_color(t.dim)
-          .child(this.loading ? "Loading…" : "No reviews yet. Ask an agent for one with /herdr-ranch-annotate <file.md> or /herdr-ranch-last."))));
+          .child(this.loading ? "Loading…" : "No reviews yet. Ask an agent for one with /herdr-ranch-review <file.md> or /herdr-ranch-review-last."))));
   }
 }
 

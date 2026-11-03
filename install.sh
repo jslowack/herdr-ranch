@@ -105,8 +105,8 @@ for skill in "$repo"/herdr-ranch-reviews/skills/*/; do
   link_one "$skill" "$HOME/.claude/skills/$(basename "$skill")"
 done
 command -v ranch-review >/dev/null 2>&1 || echo "  add ~/.local/bin to your PATH for ranch-review"
-# The skills were called ranch-annotate and ranch-last before: drop their old links.
-for old in ranch-annotate ranch-last; do
+# The skills had other names before: drop their old links.
+for old in ranch-annotate ranch-last herdr-ranch-annotate herdr-ranch-last; do
   if [ -L "$HOME/.claude/skills/$old" ]; then rm "$HOME/.claude/skills/$old" && echo "removed the old link $old"; fi
 done
 

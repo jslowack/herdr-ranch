@@ -2,7 +2,7 @@
 
 Comment on a Markdown file, or on an agent's last message, in Herdr, and send the comments back to the agent.
 
-An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude Code you start it with `/herdr-ranch-annotate <file>` or `/herdr-ranch-last`. The agent shows under Needs you until you answer; going to it (or, by setting, the moment it's asked) opens the review as a dialog over Herdr; the command waits until you send, approve or discard, then prints the outcome for the agent.
+An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude Code you start it with `/herdr-ranch-review <file>` or `/herdr-ranch-review-last`. The agent shows under Needs you until you answer; going to it (or, by setting, the moment it's asked) opens the review as a dialog over Herdr; the command waits until you send, approve or discard, then prints the outcome for the agent.
 
 ## What you see
 
@@ -32,7 +32,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 
 ## How it behaves
 
-- **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/herdr-ranch-annotate` and `/herdr-ranch-last` (`skills/`, linked to `~/.claude/skills`) run them and tell the agent how to handle each outcome.
+- **`ranch-review annotate <file> [--json]`** and **`ranch-review last [--stdin] [--json]`** (`bin/ranch-review.mjs`, linked to `~/.local/bin` by `install.sh`). The skills `/herdr-ranch-review` and `/herdr-ranch-review-last` (`skills/`, linked to `~/.claude/skills`) run them and tell the agent how to handle each outcome.
 - **The agent:** `HC_TERMINAL_ID` names its terminal; `herdr-app ls` gives its pane, app, space and tab. When `ls` answers nothing (seen with herdr-app 0.1.11), `hc ls --json` gives the app, the review opens beside the focused pane, and the mod fills in the space and tab from Herdr's `agents()`.
 - **A review** is a JSON file in `~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json`: the text, the agent, `status` (open, sent, approved, dismissed), the unsent comments (`draft`), the result, and the waiting CLI's process id. Screenshots go to `img/` next to it.
 - **Needs you:** the CLI finds the agent's terminal device (the first process up from it with a tty, `ps -o ppid=,tty=`) and writes the agent's status there as OSC 7501, the way Claude Code reports its own: `ESC ] 7501 ; state=blocked:app=<app>:kind=question:msg=<base64 "Review <title> in Herdr"> BEL`, and `state=working` once the answer is in. A record with its own `id` would not show in the Agents panel, so it is the agent's main status; the agent's next report replaces it.
@@ -48,7 +48,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 ## Built from
 
 - `bin/ranch-review.mjs` (the CLI), `mods/herdr-ranch-reviews/main.js` (the list and the dialog), `mods/herdr-ranch-reviews/reviews.js` (blocks, feedback text, transcripts; shared by both, tested in `tests/reviews.test.mjs`).
-- `skills/herdr-ranch-annotate/SKILL.md`, `skills/herdr-ranch-last/SKILL.md`.
+- `skills/herdr-ranch-review/SKILL.md`, `skills/herdr-ranch-review-last/SKILL.md`.
 - `mod.json`: `place: none`, a window overlay (70% × 85%), `button: { label: "Reviews", icon: "reviews.svg", opens: "panel", order: 35 }`.
 - herdr: `openOverlay`, `closeOverlay`, `run` (`pane.close`), `panes`, `props`, `exec`, `hc`, `readTextFile`, `writeTextFile`, `watchFolder`, `appHome`, `notify`, `shared`, `setShared`, `theme`.
 - gpui-base: `TextView.markdown`, `TextareaState` / `Textarea`.
@@ -63,6 +63,6 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 ## Done when
 
 - `herdr-app check mods/herdr-ranch-reviews` passes and `cd tests && npm test` passes.
-- `/herdr-ranch-annotate README.md` in Claude Code opens the dialog beside the agent; a comment and **Send** return `# File Feedback` to the agent.
-- `/herdr-ranch-last` opens the agent's last answer; **Approve as is** returns "The user approved.".
+- `/herdr-ranch-review README.md` in Claude Code opens the dialog beside the agent; a comment and **Send** return `# File Feedback` to the agent.
+- `/herdr-ranch-review-last` opens the agent's last answer; **Approve as is** returns "The user approved.".
 - Stopping the agent's command, then sending, pastes the feedback into its prompt.
