@@ -2,7 +2,7 @@
 
 import { exec } from "herdr";
 
-const LIST = "number,title,author,assignees,headRefName,isDraft,reviewDecision,reviewRequests,statusCheckRollup,additions,deletions,updatedAt,url,state,isCrossRepository";
+const LIST = "number,title,author,assignees,headRefName,baseRefName,isDraft,reviewDecision,reviewRequests,statusCheckRollup,additions,deletions,updatedAt,url,state,isCrossRepository";
 const VIEW = "number,title,body,url,author,headRefName,baseRefName,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
 
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, so the
@@ -31,7 +31,7 @@ export async function me(where) {
 // fields), and keeping them makes every render slow enough for the app to interrupt it.
 function slim(pr, login) {
   const s = {
-    number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName,
+    number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName,  baseRefName: pr.baseRefName ?? "",
     isDraft: pr.isDraft, reviewDecision: pr.reviewDecision, reviewRequests: (pr.reviewRequests ?? []).map((r) => ({ login: r.login })),
     checks: checks(pr.statusCheckRollup), additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
     fork: Boolean(pr.isCrossRepository),
