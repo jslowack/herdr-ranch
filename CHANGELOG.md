@@ -2,6 +2,10 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## Unreleased
+
+- **Pull requests:** a stack of dependent pull requests shows as one row with its layers under it, and says which layer blocks the merge. **Review stack** and **Fix stack to merge** start one agent on the whole stack (the fix needs `gh stack`) ([#9](https://github.com/jslowack/herdr-ranch/issues/9)).
+
 ## v0.2.1
 
 - **Reviews:** `/herdr-ranch-review @docs/foo.md` works: `ranch-review annotate` accepts the `@path` that Claude Code's file picker inserts.
