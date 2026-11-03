@@ -82,3 +82,57 @@ test("stacks: the blocker names the first layer that isn't ready, bottom up", as
     assert.equal((await found([ready(1, "main"), second, pr(3, "b2", { isDraft: true })].slice(0, name === "all ready" ? 2 : 3)))[0].blocker, blocker, name);
   }
 });
+
+// The gh stack check and what Start agent gets for a stack.
+import { hasGhStack, hash } from "../herdr-ranch-prs/mods/herdr-ranch-prs/data.js";
+import { stackAgent } from "../herdr-ranch-prs/mods/herdr-ranch-prs/stacks.js";
+
+test("ghStack: found in gh extension list, asked once per machine", async () => {
+  let calls = 0;
+  state.exec = (cmd, args) => { calls++; return { code: 0, stdout: "gh dash\tdlvhdr/gh-dash\tv4.25.2\ngh stack\tgithub/gh-stack\tv0.1.0\n", stderr: "" }; };
+  try {
+    assert.equal(await hasGhStack({ cwd: "/repo", on: "m1" }), true);
+    assert.equal(await hasGhStack({ cwd: "/repo", on: "m1" }), true);
+    assert.equal(calls, 1);
+  } finally { state.exec = null; }
+});
+
+test("ghStack: missing or gh failing is false", async () => {
+  state.exec = () => ({ code: 0, stdout: "gh dash\tdlvhdr/gh-dash\tv4.25.2\n", stderr: "" });
+  try { assert.equal(await hasGhStack({ cwd: "/repo", on: "m2" }), false); } finally { state.exec = null; }
+  state.exec = () => ({ code: 1, stdout: "", stderr: "boom" });
+  try { assert.equal(await hasGhStack({ cwd: "/repo", on: "m3" }), false); } finally { state.exec = null; }
+});
+
+const three = async () => {
+  const prs = await slimPrs([ready(1, "main"), ready(2, "b1"), pr(3, "b2", { statusCheckRollup: [failed], reviewDecision: "CHANGES_REQUESTED" })]);
+  return [stacks(prs)[0], new Map(prs.map((p) => [p.number, p]))];
+};
+
+test("stackAgent: vars for a three-layer stack", async () => {
+  const [s, byNumber] = await three();
+  const a = stackAgent(s, byNumber, "o/r");
+  assert.equal(a.vars.count, 3);
+  assert.equal(a.vars.trunk, "main");
+  assert.equal(a.vars.top, 3);
+  assert.equal(a.vars.bottom, 1);
+  assert.equal(a.vars.title, "PR 1");
+  assert.equal(a.vars.repo, "o/r");
+  assert.equal(a.vars.layers, "#1 PR 1 (b1 → main)\n#2 PR 2 (b2 → b1)\n#3 PR 3 (b3 → b2)");
+  assert.equal(a.vars.blockers, "#3: 1 failing check, changes requested");
+});
+
+test("stackAgent: no blockers is none", async () => {
+  const prs = await slimPrs([ready(1, "main"), ready(2, "b1")]);
+  assert.equal(stackAgent(stacks(prs)[0], new Map(prs.map((p) => [p.number, p])), "o/r").vars.blockers, "none");
+});
+
+test("stackAgent: branches and tabs", async () => {
+  const [s, byNumber] = await three();
+  const a = stackAgent(s, byNumber, "o/r"), h = hash("github-stack-o/r-1");
+  assert.equal(a.branches["stack-review"], `agent/stack-review-1-pr-1-${h}`);
+  assert.equal(a.branches["stack-fix"], `agent/stack-1-pr-1-${h}`);
+  assert.deepEqual(a.tabs, { "stack-review": "Review stack PR 1", "stack-fix": "Fix stack PR 1" });
+  assert.equal(a.key, "3 PRs");
+  assert.equal(a.title, "PR 1");
+});

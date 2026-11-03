@@ -2,6 +2,8 @@
 // another open pull request's head sits on top of it. Works for `gh stack` stacks and for
 // stacks made by hand. Worked out once per load, never in a render.
 
+import { hash, slug } from "./data.js";
+
 // Only open pull requests of this repository: a fork's "fix" isn't the layer below, and a
 // merged layer is no longer part of what still has to merge.
 const member = (pr) => pr.state === "OPEN" && !pr.fork;
@@ -65,4 +67,34 @@ export function stackOf(list) {
   const m = new Map();
   for (const s of list) for (const l of s.layers) m.set(l.number, s);
   return m;
+}
+
+// What a layer still needs before it can merge, for the agent: "1 failing check, changes requested".
+function needs(pr) {
+  const out = [];
+  if (pr.isDraft) out.push("draft");
+  if (pr.checks.fail > 0) out.push(`${pr.checks.fail} failing check${pr.checks.fail > 1 ? "s" : ""}`);
+  if (pr.reviewDecision === "CHANGES_REQUESTED") out.push("changes requested");
+  if (pr.checks.pending > 0) out.push("checks running");
+  if (!out.length && pr.reviewDecision !== "APPROVED") out.push("waits on review");
+  return out;
+}
+
+// What Start agent gets for a stack (besides kind, repo, machine, icon and ghStack): the
+// placeholders, a branch and a tab per mode. prs: number -> slim pull request.
+export function stackAgent(stack, prs, github) {
+  const layers = stack.layers.map((l) => prs.get(l.number)).filter(Boolean);
+  const bottom = stack.layers[0].number, top = stack.layers[stack.layers.length - 1].number;
+  const blockers = layers.map((p) => [p, needs(p)]).filter(([, n]) => n.length).map(([p, n]) => `#${p.number}: ${n.join(", ")}`);
+  const tail = `${bottom}-${slug(stack.name)}-${hash(`github-stack-${github}-${bottom}`)}`;
+  return {
+    key: `${stack.layers.length} PRs`, title: stack.name,
+    vars: {
+      title: stack.name, count: stack.layers.length, trunk: stack.trunk, top, bottom, repo: github,
+      layers: layers.map((p) => `#${p.number} ${p.title} (${p.headRefName} → ${p.baseRefName})`).join("\n"),
+      blockers: blockers.join("\n") || "none",
+    },
+    branches: { "stack-review": `agent/stack-review-${tail}`, "stack-fix": `agent/stack-${tail}` },
+    tabs: { "stack-review": `Review stack ${stack.name}`.slice(0, 60), "stack-fix": `Fix stack ${stack.name}`.slice(0, 60) },
+  };
 }

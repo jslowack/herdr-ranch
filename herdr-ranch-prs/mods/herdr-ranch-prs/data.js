@@ -141,3 +141,11 @@ export function hash(text) {
 }
 
 export const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+
+// Whether the gh stack extension is installed, asked once per machine. Fix stack to merge needs it.
+const stackExt = new Map();
+export async function hasGhStack(where) {
+  const k = where.on ?? "";
+  if (!stackExt.has(k)) stackExt.set(k, gh(["extension", "list"], where).then((out) => out.includes("gh-stack"), () => false));
+  return stackExt.get(k);
+}
