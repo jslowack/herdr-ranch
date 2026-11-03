@@ -7,6 +7,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
 import { me, list, mentioned, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { stacks, stackOf } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
@@ -29,7 +30,7 @@ const keepWidth = (w) => { try { localStorage.setItem(`width:${place()}`, String
 const contextKey = (space) => `${space?.id}|${JSON.stringify(shared("space-links") ?? {})}`;
 // What a space's list keeps in memory (the last SPACES spaces), so switching back shows it at once.
 const SPACES = 20;
-const KEPT = ["where", "login", "prs", "data", "hay", "saved", "meta", "version", "cache", "error", "unlinked", "cursor"];
+const KEPT = ["where", "login", "prs", "data", "hay", "stacks", "inStack", "saved", "meta", "version", "cache", "error", "unlinked", "cursor"];
 
 // What a row draws, worked out once per load: the row renderer runs inside layout, twice
 // for every frame Herdr draws (hover, scrolling, any spinner on screen), so it only reads.
@@ -58,7 +59,7 @@ export default class PullRequests extends View {
     if (dialog) { this.dialog = cx.new(dialog === "link" ? LinkDialog : dialog === "prompts" ? PromptsDialog : AgentDialog, props()); return; }
     this.prs = []; this.login = null; this.error = null; this.loading = false;
     this.query = ""; this.filter = null; this.mentions = null; this.mentionsVersion = 0; this.open = null; this.page = null; this.pageError = null; this.width = lastWidth(); this.version = 0;
-    this.gen = 0; this.data = new Map(); this.hay = new Map(); this.saved = null; this.versions = 0; this.kept = new Map();
+    this.gen = 0; this.data = new Map(); this.hay = new Map(); this.stacks = []; this.inStack = new Map(); this.collapsed = new Set(); this.saved = null; this.versions = 0; this.kept = new Map();
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     // The open pull request's page is a view of its own: a live change redraws the list only,
@@ -238,6 +239,7 @@ export default class PullRequests extends View {
     this.saved = saved; this.prs = prs; this.version = ++this.versions;
     this.data = new Map(prs.map((p) => [p.number, rowData(p)]));
     this.hay = new Map(prs.map((p) => [p.number, haystack(p)]));
+    this.stacks = stacks(prs); this.inStack = stackOf(this.stacks);
     return true;
   }
 
@@ -307,19 +309,28 @@ export default class PullRequests extends View {
   // change (agents, focus), so a render must stay cheap.
   items() {
     const branch = this.space()?.branch ?? "";
-    const k = `${this.version}|${this.query}|${this.filter}|${this.mentionsVersion}|${branch}`;
+    const k = `${this.version}|${this.query}|${this.filter}|${this.mentionsVersion}|${branch}|${[...this.collapsed].join(",")}`;
     if (this.cache?.k !== k) {
       const ws = words(this.query);
       const shown = this.prs.filter((p) => matches(this.hay.get(p.number), ws) && this.keep(p));
-      const groups = GROUPS.map(([id, label]) => ({ id, label, prs: shown.filter((p) => p.group === id) })).filter((g) => g.prs.length);
+      const passing = new Set(shown.map((p) => p.number)), byNumber = new Map(this.prs.map((p) => [p.number, p]));
+      // A stack shows whole when any layer passes the search and filter (the others dimmed),
+      // as one row in the group of its least ready layer; its layers aren't loose rows.
+      const stacks = this.stacks.filter((s) => s.layers.some((l) => passing.has(l.number)));
+      const loose = shown.filter((p) => !this.inStack.has(p.number));
+      const groups = GROUPS.map(([id, label]) => ({ id, label, stacks: stacks.filter((s) => s.group === id), prs: loose.filter((p) => p.group === id) }))
+        .filter((g) => g.stacks.length || g.prs.length);
+      const layers = (s) => (this.collapsed.has(s.key) ? [] : s.layers.map((l) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: l.level, dim: !passing.has(l.number) })));
       // The pull request of the shown branch, pinned on top (it stays in its own group too).
       // Only a branch of this repository (a fork's "main" isn't yours), and only when it passes the search and filter.
       const mine = branch && shown.find((p) => p.headRefName === branch && p.state === "OPEN" && !p.fork);
       const items = [...(mine ? [{ key: "group-here", group: { label: "This branch", count: "1" } }, { key: `here-${mine.number}`, data: this.data.get(mine.number) }] : []), ...groups.flatMap((g) => [
-        { key: `group-${g.id}`, group: { label: g.label, count: String(g.prs.length) } },
+        { key: `group-${g.id}`, group: { label: g.label, count: String(g.stacks.length + g.prs.length) } },
+        ...g.stacks.flatMap((s) => [{ key: s.key, stack: s, open: !this.collapsed.has(s.key) }, ...layers(s)]),
         ...g.prs.map((pr) => ({ key: `pr-${pr.number}`, data: this.data.get(pr.number) })),
       ])];
-      this.cache = { k, items, flat: shown.length ? groups.flatMap((g) => g.prs) : [] };
+      // Up and Down step through the rows in order: loose pull requests and the layers of open stacks.
+      this.cache = { k, items, flat: items.filter((i) => i.data && i.key.startsWith("pr-")).map((i) => byNumber.get(i.data.number)) };
     }
     return this.cache;
   }
@@ -439,18 +450,21 @@ export default class PullRequests extends View {
   // One row from its row data and the styles `render` picked once (`s`). Built once per
   // render: hover is a style (no script runs on it), and only entering a row calls back,
   // to fetch its page ahead.
-  row(d, s) {
-    const t = s.t;
+  // A stack's layer (`at`: { level, dim }) is indented by its level, with the level number in
+  // front; a layer the search or filter doesn't match is dimmed.
+  row(d, s, at = null) {
+    const t = s.t, dim = Boolean(at?.dim);
     const status = (e) => e.children(d.pills.map(([text, color]) => div().px(6).py(1).rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t[color]).child(text)));
     const diff = h_flex().flex_none().gap(4).text_size(fs.meta).child(div().text_color(t.ansi2).child(d.adds)).child(div().text_color(t.ansi1).child(d.dels));
-    const number = div().w(36).flex_none().text_color(t.dim).text_size(fs.meta).child(d.label);
-    const state = icon(d.state, kindColor(d.state, t));
+    const number = div().w(36).flex_none().text_color(dim ? t.muted : t.dim).text_size(fs.meta).child(d.label);
+    const level = at?.level ? div().w(12).flex_none().text_size(fs.tiny).text_color(t.muted).child(String(at.level)) : null;
+    const state = level ? h_flex().flex_none().gap(4).items_center().child(level).child(icon(d.state, kindColor(d.state, t))) : icon(d.state, kindColor(d.state, t));
     const checks = (e) => (d.checks ? e.child(h_flex().flex_none().gap(2).items_center().text_size(fs.meta).text_color(kindColor(d.checks[0], t))
       .child(icon(d.checks[0], kindColor(d.checks[0], t), 12)).child(String(d.checks[1]))) : e);
-    const title = div().flex_1().min_w(0).truncate().text_color(d.draft ? t.muted : t.foreground).child(d.title);
+    const title = div().flex_1().min_w(0).truncate().text_color(d.draft || dim ? t.muted : t.foreground).child(d.title);
     const age = div().w(30).flex_none().text_right().text_size(fs.meta).text_color(t.dim).child(d.age);
     const agent = (e) => { const c = s.agents?.has(d.number) && agentChip(`agent-${d.number}`, s.agents.get(d.number), t); return c ? e.child(c) : e; };
-    const base = (e) => e.flex_none().px(10).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
+    const base = (e) => e.flex_none().px(10).when(Boolean(at?.level), (e) => e.pl(10 + 12 * at.level)).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
       .when(s.keys && s.cursor === d.number, (e) => e.bg(t.selected));
     // Narrow (the side panel): two lines, so the title keeps the whole width.
     if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
@@ -463,6 +477,36 @@ export default class PullRequests extends View {
       .child(div().w(70).flex_none().flex().justify_end().child(diff))
       .child(avatar(d.author, t))
       .child(age);
+  }
+
+  // A stack's own row: the chevron (collapses its layers), a `stack` pill, its name (the bottom
+  // layer's title), where it merges, what blocks it, and the two agent actions. The actions
+  // always show: Herdr runs no script on hover, so they can't appear only then.
+  stackRow(i, s) {
+    const t = s.t, st = i.stack, ready = st.blocker === "ready to merge", fixOk = this.ghStack !== false;
+    const button = (id, label, primary, enabled, click) => div().id(id).px(8).py(1).flex_none().rounded(6).cursor_pointer().text_size(fs.meta).border_1()
+      .border_color(primary && enabled ? t.ansi2 : t.border).text_color(!enabled ? t.muted : primary ? t.ansi2 : t.foreground)
+      .hover((x) => x.bg(t.hover)).on_click((_e, cx) => click(cx)).child(label);
+    const actions = h_flex().flex_none().gap(4)
+      .child(button(`${st.key}-review`, "Review stack", false, true, () => this.startStack(st, "stack-review")))
+      .child(button(`${st.key}-fix`, fixOk ? "Fix stack to merge" : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
+    const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
+      .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
+    const pill = div().px(6).py(1).flex_none().rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t.ansi4).child("stack");
+    const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
+    const into = div().flex_none().text_size(fs.meta).text_color(t.dim).child(`${st.layers.length} PRs into ${st.trunk}`);
+    const blocker = div().flex_none().text_size(fs.meta).text_color(ready ? t.ansi2 : t.ansi1).child(st.blocker);
+    const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
+    // Narrow: the name on the first line, where it merges, the blocker and the actions on the second.
+    if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
+      .child(h_flex().gap(8).items_center().child(chevron).child(pill).child(name))
+      .child(h_flex().pl(22).gap(8).items_center().child(into).child(blocker).child(div().flex_1()).child(actions));
+    return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(into).child(blocker).child(actions);
+  }
+
+  toggleStack(key, cx) {
+    if (this.collapsed.has(key)) this.collapsed.delete(key); else this.collapsed.add(key);
+    cx.notify();
   }
 
   // The open page shows its agents' status, but redraws only on its own: a status change
@@ -520,7 +564,7 @@ export default class PullRequests extends View {
     const [shownItems, windowed] = this.keyWindow(items, (i) => i.data?.number === this.cursor, s.two ? fs.row2 : fs.row);
     const list = v_flex().w_full().flex_1().min_h(0)
       .when(items.length > 0, (e) => e.child(v_flex().id(windowed ? "pr-list-keys" : "pr-list").w_full().flex_1().min_h(0).px(6).overflow_y_scrollbar()
-        .children(shownItems.map((i) => (i.group ? heading(i.group) : this.row(i.data, s).id(i.key)
+        .children(shownItems.map((i) => (i.group ? heading(i.group) : i.stack ? this.stackRow(i, s) : this.row(i.data, s, i.level ? i : null).id(i.key)
           .on_click((_e, cx) => { this.handle.focus(); this.pick(i.data.number, cx); })
           .on_hover((on, cx) => {
             const n = i.data.number;
