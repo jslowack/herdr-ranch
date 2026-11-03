@@ -2,7 +2,16 @@
 
 import { exec } from "herdr";
 
-const LIST = "number,title,author,assignees,headRefName,baseRefName,isDraft,reviewDecision,reviewRequests,statusCheckRollup,additions,deletions,updatedAt,url,state,isCrossRepository";
+// The list's own query, not `gh pr list --json statusCheckRollup`: that returns every check
+// run with its workflow, times and link (hundreds per refresh), which costs GitHub seconds,
+// while the list only shows how many pass, fail and run. Counts per state answer that.
+const FIELDS = `number title author { login } assignees(first: 20) { nodes { login } } headRefName baseRefName
+  isDraft reviewDecision reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
+  additions deletions updatedAt url state isCrossRepository
+  commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
+    checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }`;
+const LIST = (states, first) => `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
+  pullRequests(states: ${states}, first: ${first}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${FIELDS} } } } }`;
 const VIEW = "number,title,body,url,author,headRefName,baseRefName,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
 
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, so the
@@ -37,21 +46,35 @@ function slim(pr, login) {
   const s = {
     number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName, baseRefName: pr.baseRefName ?? "",
     isDraft: pr.isDraft, reviewDecision: pr.reviewDecision, reviewRequests: (pr.reviewRequests ?? []).map((r) => ({ login: r.login })),
-    checks: checks(pr.statusCheckRollup), additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
+    checks: pr.checks, additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
     fork: Boolean(pr.isCrossRepository),
   };
   s.group = group(s, login);
   return s;
 }
 
+// A GraphQL pull request in the shape the rest of the list reads (that of `gh pr list --json`),
+// with its checks already counted.
+function fromNode(n) {
+  const rollup = n.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
+  return {
+    ...n, author: n.author ?? null, assignees: n.assignees?.nodes ?? [], reviewDecision: n.reviewDecision ?? "",
+    reviewRequests: (n.reviewRequests?.nodes ?? []).map((r) => r.requestedReviewer ?? {}),
+    checks: countChecks(rollup),
+  };
+}
+
+async function query(where, states, first) {
+  const [owner, name] = where.github.split("/");
+  const out = JSON.parse(await gh(["api", "graphql", "-f", `query=${LIST(states, first)}`, "-f", `owner=${owner}`, "-f", `name=${name}`], where));
+  return (out.data?.repository?.pullRequests?.nodes ?? []).filter(Boolean).map(fromNode);
+}
+
 export async function list(where, login) {
-  const [open, closed] = await Promise.all([
-    gh(["pr", "list", "-R", where.github, "--state", "open", "--limit", "100", "--json", LIST], where),
-    gh(["pr", "list", "-R", where.github, "--state", "closed", "--limit", "10", "--json", LIST], where),
-  ]);
+  const [open, closed] = await Promise.all([query(where, "OPEN", 100), query(where, "[CLOSED, MERGED]", 10)]);
   // A pull request that closes between the two calls is in both: keep it once.
   const seen = new Set();
-  return [...JSON.parse(open), ...JSON.parse(closed)].filter((pr) => !seen.has(pr.number) && seen.add(pr.number)).map((pr) => slim(pr, login));
+  return [...open, ...closed].filter((pr) => !seen.has(pr.number) && seen.add(pr.number)).map((pr) => slim(pr, login));
 }
 
 // The page, with its timeline (review requests, labels, pushes, merging) from the issues API,
@@ -98,9 +121,15 @@ function checkState(c) {
   return ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(c.conclusion) ? "pass" : "fail";
 }
 
-function checks(rollup) {
+// Check runs by conclusion when done, else by status; status contexts by state.
+const PASS = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
+const FAIL = new Set(["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE", "ERROR"]);
+function countChecks(c) {
   const n = { pass: 0, fail: 0, pending: 0 };
-  for (const c of rollup ?? []) n[checkState(c)]++;
+  for (const { state, count } of [...(c?.checkRunCountsByState ?? []), ...(c?.statusContextCountsByState ?? [])]) {
+    if (!count) continue;
+    n[PASS.has(state) ? "pass" : FAIL.has(state) ? "fail" : "pending"] += count;
+  }
   return n;
 }
 

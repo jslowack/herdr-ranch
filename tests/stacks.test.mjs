@@ -2,15 +2,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
+import { listExec, answer, which } from "./stubs/pr-graphql.mjs";
 import { list as listPrs } from "../herdr-ranch-prs/mods/herdr-ranch-prs/data.js";
 import { stacks, stackOf } from "../herdr-ranch-prs/mods/herdr-ranch-prs/stacks.js";
 
 // Through `list`, so the stacks see the same slim pull requests the mod does.
 async function slimPrs(open, closed = [], login = "me") {
-  state.exec = (cmd, args) => {
-    const which = args[args.indexOf("--state") + 1];
-    return { code: 0, stdout: JSON.stringify(which === "open" ? open : closed), stderr: "" };
-  };
+  state.exec = listExec(open, closed);
   try { return await listPrs({ github: "o/r", cwd: "/repo", on: null }, login); } finally { state.exec = null; }
 }
 const ok = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" };
@@ -138,7 +136,7 @@ test("gh: a GitHub 5xx is asked again once, so a passing 504 doesn't fail the li
   state.exec = (cmd, args) => {
     calls++;
     if (calls === 1) return { code: 1, stdout: "", stderr: "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" };
-    return { code: 0, stdout: JSON.stringify(args[args.indexOf("--state") + 1] === "open" ? [pr(1, "main")] : []), stderr: "" };
+    return { code: 0, stdout: answer(which(args) === "open" ? [pr(1, "main")] : []), stderr: "" };
   };
   try {
     const listed = await listPrs({ github: "o/r", cwd: "/repo", on: null }, "me");
