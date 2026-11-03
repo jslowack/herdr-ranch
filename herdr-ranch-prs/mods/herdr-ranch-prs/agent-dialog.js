@@ -16,7 +16,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui
 import { run, props, closeOverlay, theme, exec, knownAgents, notify, spaces, home as localHome, window as appWindow } from "herdr";
 const platform = () => { try { return appWindow().platform; } catch { return "macos"; } };
 import { fs, icon, kindColor, avatar, spaceRepo } from "./links.js";
-import { MODES, ABOUT, PLACEHOLDERS, DEFAULTS, fill, clean, repoPrompts, trustPrompts, userPrompts, saveUserPrompts, template, mainCheckout } from "./prompts.js";
+import { MODES, ABOUT, PLACEHOLDERS, DEFAULTS, promptModes, placeholdersOf, fill, clean, repoPrompts, trustPrompts, userPrompts, saveUserPrompts, template, mainCheckout } from "./prompts.js";
 
 const cut = (text, n) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text);
 const slug = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -81,7 +81,8 @@ export class AgentDialog extends View {
     const p = props() ?? {};
     this.kind = p.kind ?? "issue";
     // "Fix failing checks" only when a check fails.
-    this.modes = MODES[this.kind].filter(([id]) => id !== "checks" || (p.vars?.failing && p.vars.failing !== "none"));
+    // "Fix stack to merge" only with the gh stack extension.
+    this.modes = MODES[this.kind].filter(([id]) => (id !== "checks" || (p.vars?.failing && p.vars.failing !== "none")) && (id !== "stack-fix" || p.ghStack !== false));
     this.mode = this.modes[0][0];
     this.agents = []; this.agent = null; this.busy = false; this.error = "";
     this.repoTemplates = {}; this.mine = userPrompts(p.mod);
@@ -351,7 +352,7 @@ export class PromptsDialog extends View {
     const p = props() ?? {};
     this.kind = p.kind ?? "issue"; this.mod = p.mod;
     this.mine = { ...userPrompts(p.mod) };
-    this.mode = MODES[this.kind][0][0];
+    this.mode = promptModes(this.kind)[0][0];
     this.text = TextareaState.new({ value: this.mine[this.mode] ?? DEFAULTS[this.mode], rows: 11 });
     this.repo = null; this.repoTemplates = {};
     this.handle = cx.focus_handle();
@@ -388,17 +389,17 @@ export class PromptsDialog extends View {
       })
       .child(ui.header("Prompts", div().text_size(fs.meta).text_color(t.muted).child(`What Start agent sends, per mode. Placeholders fill in the ${this.kind === "pr" ? "pull request" : "issue"}.`)))
       .child(v_flex().id("prompts-body").flex_1().min_h(0).overflow_y_scrollbar().px(16).py(12).gap(10)
-        .child(h_flex().gap(8).items_center().child(ui.seg("pmode", MODES[this.kind], this.mode, (m, cx) => this.pick(m, cx))).child(div().flex_1())
+        .child(h_flex().gap(8).items_center().child(ui.seg("pmode", promptModes(this.kind), this.mode, (m, cx) => this.pick(m, cx))).child(div().flex_1())
           .child(ui.chip("state", customized ? "yours" : "default", customized, () => {})))
         .child(ui.hint(ABOUT[this.mode]))
         .child(div().min_h(220).px(8).py(5).rounded(6).border_1().border_color(t.input).font_family("Menlo").text_size(fs.meta).overflow_hidden().child(Textarea.new(this.text)))
         .child(v_flex().gap(4).child(ui.label("Placeholders (click to insert)"))
-          .child(h_flex().gap(6).flex_wrap().children(PLACEHOLDERS[this.kind].map((k) => ui.chip(`ph-${k}`, `{${k}}`, false, (cx) => { this.text.replace(`{${k}}`); this.text.focus(); cx.notify(); })))))
+          .child(h_flex().gap(6).flex_wrap().children(placeholdersOf(this.mode).map((k) => ui.chip(`ph-${k}`, `{${k}}`, false, (cx) => { this.text.replace(`{${k}}`); this.text.focus(); cx.notify(); })))))
         .child(h_flex().gap(8).items_center().px(10).py(7).rounded(6).bg(t.surface).text_size(fs.meta).text_color(t.muted)
           .child(div().size(8).rounded_full().bg(fromRepo ? t.ansi3 : t.accent))
           .child(div().flex_1().min_w(0).child(!this.repo ? "No repository for this space: yours is used everywhere."
-            : fromRepo ? `This repository's .herdr/prompts.md has its own "${MODES[this.kind].find(([id]) => id === this.mode)[1]}": it wins there.`
-            : `This repository has no .herdr/prompts.md section for this mode, so this prompt is used. A "## ${MODES[this.kind].find(([id]) => id === this.mode)[1]}" section there would win once you approve it.`))))
+            : fromRepo ? `This repository's .herdr/prompts.md has its own "${promptModes(this.kind).find(([id]) => id === this.mode)[1]}": it wins there.`
+            : `This repository has no .herdr/prompts.md section for this mode, so this prompt is used. A "## ${promptModes(this.kind).find(([id]) => id === this.mode)[1]}" section there would win once you approve it.`))))
       .child(ui.footer([
         ui.button("reset", "Reset to default", null, true, (cx) => { this.text.set_value(DEFAULTS[this.mode]); delete this.mine[this.mode]; cx.notify(); }),
         div().flex_1(),
