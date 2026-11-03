@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/jslowack/herdr-ranch/security/advisories/new
+    about: Report it privately, not in a public issue.
+  - name: A bug in Herdr itself
+    url: https://github.com/herdrdev/herdr-app/issues
+    about: Problems with the app, not with these mods, go to Herdr's maintainers.
