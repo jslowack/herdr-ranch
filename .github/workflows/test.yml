@@ -1,5 +1,9 @@
 name: test
 on: [push, pull_request]
+# CI only reads the repository. A pull request from a fork waits for a
+# maintainer's approval before it runs (see CONTRIBUTING.md).
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
