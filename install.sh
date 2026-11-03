@@ -58,6 +58,8 @@ for mod in "$repo"/*/mods/*/; do
     continue
   fi
   name=$(basename "$mod")
+  # A folder left from a removed mod (only files Herdr wrote, no main.js) isn't a mod.
+  [ -f "$mod/main.js" ] || continue
   target="$dest/$name"
   if [ -e "$target" ] && [ ! -L "$target" ]; then
     echo "skip $name: $target exists and is not a link"
@@ -69,10 +71,11 @@ for mod in "$repo"/*/mods/*/; do
 done
 
 # shared/ holds the files both lists need (a mod cannot import outside its folder, so
-# each keeps a copy): warn about a copy that differs from its source.
+# each keeps a copy): warn about a copy that differs from its source. Reviews keeps update.js only.
 for src in "$repo"/shared/*.js; do
   file=$(basename "$src")
-  for mod in herdr-ranch-prs herdr-ranch-issues; do
+  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-reviews; do
+    [ "$mod" = herdr-ranch-reviews ] && [ "$file" != update.js ] && continue
     cmp -s "$src" "$repo/$mod/mods/$mod/$file" || echo "stale $mod/mods/$mod/$file: copy shared/$file over it"
   done
 done

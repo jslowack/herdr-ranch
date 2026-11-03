@@ -15,6 +15,7 @@ jobs:
               cmp -s "$f" "$m/mods/$m/$(basename "$f")" || { echo "stale copy: $m/mods/$m/$(basename "$f")"; exit 1; }
             done
           done
+          cmp -s shared/update.js herdr-ranch-reviews/mods/herdr-ranch-reviews/update.js || { echo "stale copy: herdr-ranch-reviews/mods/herdr-ranch-reviews/update.js"; exit 1; }
       - name: Every mod file parses
         run: |
           for f in */mods/*/*.js shared/*.js; do
