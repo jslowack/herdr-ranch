@@ -7,7 +7,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
 import { me, list, mentioned, hasGhStack, TRANSIENT, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
-import { stacks, stackOf, stackAgent } from "./stacks.js";
+import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
@@ -356,7 +356,7 @@ export default class PullRequests extends View {
     const tail = `${pr.number}-${slug(pr.title)}-${hash(`github-pr-${pr.url}`)}`;
     const failing = (pr.statusCheckRollup ?? []).filter((c) => c.state === "fail").map((c) => c.name);
     openAgentDialog("herdr-ranch-prs", {
-      kind: "pr", repo: this.where.repo.main, on: this.where.on, key: `#${pr.number}`, title: pr.title, fork: Boolean(pr.isCrossRepository),
+      kind: "pr", mode: agentMode(pr, this.login), repo: this.where.repo.main, on: this.where.on, key: `#${pr.number}`, title: pr.title, fork: Boolean(pr.isCrossRepository),
       icon: pr.state === "MERGED" ? "merged" : pr.isDraft ? "draft" : "pr",
       vars: { number: pr.number, title: pr.title, url: pr.url, head: pr.headRefName ?? "", base: pr.baseRefName ?? "", body: pr.body ?? "", failing: failing.join(", ") || "none", repo: this.where.github },
       branches: { review: `agent/review-${tail}`, comments: `agent/fix-${tail}`, checks: `agent/checks-${tail}` },
@@ -364,16 +364,15 @@ export default class PullRequests extends View {
     });
   }
 
-  // One agent on a whole stack, opened on the picked mode. Without gh stack, Fix says how to get it.
-  startStack(stack, mode) {
+  // One agent on a whole stack: on fixing it when a layer is yours, else on reviewing it.
+  // Fixing needs gh stack; without it the dialog has only the review, and a toast says how to get it.
+  startStack(stack) {
     if (!this.where?.repo) return;
-    if (mode === "stack-fix" && this.ghStack === false) {
-      notify({ title: "Needs gh stack", body: "Install it with: gh extension install github/gh-stack", level: "info", timeout: 6000 });
-      return;
-    }
+    const prs = new Map(this.prs.map((p) => [p.number, p])), mode = agentMode(stack, this.login, prs);
+    if (mode === "stack-fix" && this.ghStack === false) notify({ title: "Fix stack to merge needs gh stack", body: "Install it with: gh extension install github/gh-stack", level: "info", timeout: 6000 });
     openAgentDialog("herdr-ranch-prs", {
       kind: "stack", mode, repo: this.where.repo.main, on: this.where.on, icon: "pr", fork: false, ghStack: this.ghStack !== false,
-      ...stackAgent(stack, new Map(this.prs.map((p) => [p.number, p])), this.where.github),
+      ...stackAgent(stack, prs, this.where.github),
     });
   }
 
@@ -496,17 +495,15 @@ export default class PullRequests extends View {
   }
 
   // A stack's own row: the chevron (collapses its layers), the stack icon, its name (the bottom
-  // layer's title) and the two agent actions. The layers under it show their own status. The
+  // layer's title) and Review with agent. The layers under it show their own status. The
   // actions always show: Herdr runs no script on hover, so they can't appear only then.
   stackRow(i, s) {
-    // An agent needs this repository's main checkout (like Review with agent on a page).
-    const t = s.t, st = i.stack, local = Boolean(this.where?.repo), fixOk = local && this.ghStack !== false;
-    const button = (id, label, primary, enabled, click) => div().id(id).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
-      .border_color(primary && enabled ? t.ansi2 : t.border).text_color(!enabled ? t.muted : primary ? t.ansi2 : t.foreground)
-      .when(enabled || this.ghStack === false, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click((_e, cx) => click(cx))).child(label);
-    const actions = h_flex().flex_none().gap(4)
-      .child(button(`${st.key}-review`, "Review", false, local, () => this.startStack(st, "stack-review")))
-      .child(button(`${st.key}-fix`, !local || this.ghStack !== false ? "Fix" : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
+    // One button, as on a pull request's page; it needs this repository's main checkout.
+    const t = s.t, st = i.stack, local = Boolean(this.where?.repo);
+    const actions = div().id(`${st.key}-agent`).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
+      .border_color(local ? t.ansi2 : t.border).text_color(local ? t.ansi2 : t.muted)
+      .when(local, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => this.startStack(st)))
+      .child("Review with agent");
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
       .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
     const pill = icon("stack", t.ansi4);

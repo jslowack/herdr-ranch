@@ -86,3 +86,11 @@ export function stackAgent(stack, prs, github) {
     tabs: { "stack-review": `Review stack ${stack.name}`.slice(0, 60), "stack-fix": `Fix stack ${stack.name}`.slice(0, 60) },
   };
 }
+
+// The mode Review with agent opens on: your own work gets fixed (a stack with any layer of
+// yours, or your pull request's review comments), someone else's gets reviewed. `item` is a
+// stack (with `layers`, and `prs`: number -> slim pull request) or a pull request.
+export function agentMode(item, login, prs = null) {
+  if (item.layers) return login && item.layers.some((l) => prs?.get(l.number)?.author?.login === login) ? "stack-fix" : "stack-review";
+  return login && item.author?.login === login ? "comments" : "review";
+}

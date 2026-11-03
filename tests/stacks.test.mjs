@@ -152,3 +152,19 @@ test("gh: other failures are not retried", async () => {
   state.exec = () => { calls++; return { code: 1, stdout: "", stderr: "HTTP 401: Bad credentials" }; };
   try { await assert.rejects(listPrs({ github: "o/r", cwd: "/repo", on: null }, "me"), /401/); assert.equal(calls, 2, "open and closed, once each"); } finally { state.exec = null; }
 });
+
+// Review with agent opens on fixing for your own work, on reviewing for someone else's.
+import { agentMode } from "../herdr-ranch-prs/mods/herdr-ranch-prs/stacks.js";
+
+test("agentMode: your pull request opens on Address review comments, someone else's on Review", () => {
+  assert.equal(agentMode({ author: { login: "me" } }, "me"), "comments");
+  assert.equal(agentMode({ author: { login: "ada" } }, "me"), "review");
+  assert.equal(agentMode({ author: { login: "ada" } }, null), "review", "unknown login reviews");
+});
+
+test("agentMode: a stack with a layer of yours opens on Fix stack to merge, else on Review stack", async () => {
+  const prs = await slimPrs([pr(1, "main", { author: { login: "ada" } }), pr(2, "b1", { author: { login: "me" } })]);
+  const byNumber = new Map(prs.map((p) => [p.number, p])), s = stacks(prs)[0];
+  assert.equal(agentMode(s, "me", byNumber), "stack-fix");
+  assert.equal(agentMode(s, "bob", byNumber), "stack-review");
+});

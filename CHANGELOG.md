@@ -5,6 +5,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 ## Unreleased
 
 - **Pull requests:** a stack of dependent pull requests shows as one row with its layers under it, and says which layer blocks the merge. **Review stack** and **Fix stack to merge** start one agent on the whole stack (the fix needs `gh stack`) ([#9](https://github.com/jslowack/herdr-ranch/issues/9)).
+- **Pull requests:** every open pull request shows its review state (`draft`, `needs review`, `approved`, `changes`), and **Review with agent** opens on fixing your own pull request or stack, and on reviewing someone else's.
 - **Pull requests:** a GitHub timeout (502, 503, 504) is retried once, and a second one no longer shows a red error over the list.
 
 ## v0.2.1
