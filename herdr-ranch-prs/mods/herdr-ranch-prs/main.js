@@ -495,7 +495,7 @@ export default class PullRequests extends View {
       .child(age);
   }
 
-  // A stack's own row: the chevron (collapses its layers), a `stack` pill, its name (the bottom
+  // A stack's own row: the chevron (collapses its layers), the stack icon, its name (the bottom
   // layer's title) and the two agent actions. The layers under it show their own status. The
   // actions always show: Herdr runs no script on hover, so they can't appear only then.
   stackRow(i, s) {
@@ -509,7 +509,7 @@ export default class PullRequests extends View {
       .child(button(`${st.key}-fix`, !local || this.ghStack !== false ? "Fix" : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
       .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
-    const pill = div().px(6).py(1).flex_none().rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t.ansi4).child("stack");
+    const pill = icon("stack", t.ansi4);
     const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
     const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
     return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(actions);
