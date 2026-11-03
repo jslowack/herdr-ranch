@@ -244,7 +244,13 @@ async function main() {
   }
 
   for (;;) {
-    await new Promise((r) => setTimeout(r, POLL));
+    // The answer arrives as a change to the file: wake on it at once, or after POLL at the latest.
+    await new Promise((resolve) => {
+      let w = null;
+      const done = () => { clearTimeout(t); try { w?.close(); } catch { /* closed */ } resolve(); };
+      const t = setTimeout(done, POLL);
+      try { w = fs.watch(DIR, (_e, name) => { if (!name || String(name).startsWith(id)) done(); }); } catch { /* polling only */ }
+    });
     const r = readReview(where);
     // Unreadable while the mod writes it: read again. Gone: removed from the list (discarded).
     if (!r && fs.existsSync(where)) continue;
