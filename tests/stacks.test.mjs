@@ -146,3 +146,23 @@ test("ghStack: a missing extension is asked again, so installing it counts on th
     assert.equal(await hasGhStack({ cwd: "/repo", on: "m4" }), true);
   } finally { state.exec = null; }
 });
+
+test("gh: a GitHub 5xx is asked again once, so a passing 504 doesn't fail the list", async () => {
+  let calls = 0;
+  state.exec = (cmd, args) => {
+    calls++;
+    if (calls === 1) return { code: 1, stdout: "", stderr: "HTTP 504: 504 Gateway Timeout (https://api.github.com/graphql)" };
+    return { code: 0, stdout: JSON.stringify(args[args.indexOf("--state") + 1] === "open" ? [pr(1, "main")] : []), stderr: "" };
+  };
+  try {
+    const listed = await listPrs({ github: "o/r", cwd: "/repo", on: null }, "me");
+    assert.deepEqual(listed.map((p) => p.number), [1]);
+    assert.equal(calls, 3, "one retry, then the second list");
+  } finally { state.exec = null; }
+});
+
+test("gh: other failures are not retried", async () => {
+  let calls = 0;
+  state.exec = () => { calls++; return { code: 1, stdout: "", stderr: "HTTP 401: Bad credentials" }; };
+  try { await assert.rejects(listPrs({ github: "o/r", cwd: "/repo", on: null }, "me"), /401/); assert.equal(calls, 2, "open and closed, once each"); } finally { state.exec = null; }
+});

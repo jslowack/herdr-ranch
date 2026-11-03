@@ -7,8 +7,12 @@ const VIEW = "number,title,body,url,author,headRefName,baseRefName,isDraft,state
 
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, so the
 // folder only matters for which machine and sign-in runs gh.
+// GitHub answers a heavy query with a 502, 503 or 504 now and then, well inside the rate
+// limit; one immediate retry gets most of them, so only a second failure reaches the list.
+export const TRANSIENT = /HTTP 50[234]|Gateway Time-?out|Bad Gateway|Service Unavailable/i;
 async function gh(args, where) {
-  const r = await exec("gh", args, { cwd: where.cwd, on: where.on });
+  let r = await exec("gh", args, { cwd: where.cwd, on: where.on });
+  if (r.code !== 0 && TRANSIENT.test(r.stderr || r.stdout)) r = await exec("gh", args, { cwd: where.cwd, on: where.on });
   if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || `gh ${args[0]} failed`);
   return r.stdout;
 }

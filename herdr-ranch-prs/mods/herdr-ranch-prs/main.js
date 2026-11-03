@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, hasGhStack, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { me, list, mentioned, hasGhStack, TRANSIENT, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
 import { stacks, stackOf, stackAgent } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
@@ -322,7 +322,7 @@ export default class PullRequests extends View {
       const loose = shown.filter((p) => !this.inStack.has(p.number));
       const groups = GROUPS.map(([id, label]) => ({ id, label, stacks: stacks.filter((s) => s.group === id), prs: loose.filter((p) => p.group === id) }))
         .filter((g) => g.stacks.length || g.prs.length);
-      const layers = (s) => (this.collapsed.has(s.key) ? [] : s.layers.map((l) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: l.level, dim: !passing.has(l.number) })));
+      const layers = (s) => (this.collapsed.has(s.key) ? [] : s.layers.map((l, n) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: n + 1, dim: !passing.has(l.number) })));
       // The pull request of the shown branch, pinned on top (it stays in its own group too).
       // Only a branch of this repository (a fork's "main" isn't yours), and only when it passes the search and filter.
       const mine = branch && shown.find((p) => p.headRefName === branch && p.state === "OPEN" && !p.fork);
@@ -465,8 +465,8 @@ export default class PullRequests extends View {
   // One row from its row data and the styles `render` picked once (`s`). Built once per
   // render: hover is a style (no script runs on it), and only entering a row calls back,
   // to fetch its page ahead.
-  // A stack's layer (`at`: { level, dim }) is indented by its level, with the level number in
-  // front; a layer the search or filter doesn't match is dimmed.
+  // A stack's layer (`at`: { level, dim }) is indented once under its stack row, with its
+  // place in the stack in front; a layer the search or filter doesn't match is dimmed.
   row(d, s, at = null) {
     const t = s.t, dim = Boolean(at?.dim);
     const status = (e) => e.children(d.pills.map(([text, color]) => div().px(6).py(1).rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t[color]).child(text)));
@@ -479,7 +479,7 @@ export default class PullRequests extends View {
     const title = div().flex_1().min_w(0).truncate().text_color(d.draft || dim ? t.muted : t.foreground).child(d.title);
     const age = div().w(30).flex_none().text_right().text_size(fs.meta).text_color(t.dim).child(d.age);
     const agent = (e) => { const c = s.agents?.has(d.number) && agentChip(`agent-${d.number}`, s.agents.get(d.number), t); return c ? e.child(c) : e; };
-    const base = (e) => e.flex_none().px(10).when(Boolean(at?.level), (e) => e.pl(10 + 12 * at.level)).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
+    const base = (e) => e.flex_none().px(10).when(Boolean(at?.level), (e) => e.pl(24)).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
       .when(s.keys && s.cursor === d.number, (e) => e.bg(t.selected));
     // Narrow (the side panel): two lines, so the title keeps the whole width.
     if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
@@ -626,7 +626,10 @@ export default class PullRequests extends View {
           .when(Boolean(overlay), (e) => e.child(close)))
         .when(!wide, (e) => e.child(search.w_full()))
         .child(filters))
-      .when(Boolean(this.error && this.prs.length), (e) => e.child(div().px(14).py(4).text_size(fs.meta).text_color(t.ansi1).child(this.error)))
+      // Over a list already shown, a GitHub hiccup (5xx) is a quiet note: the list stays and the next minute retries.
+      .when(Boolean(this.error && this.prs.length), (e) => e.child(TRANSIENT.test(this.error)
+        ? div().px(14).py(4).text_size(fs.meta).text_color(t.dim).child("GitHub didn't answer in time. Showing the last list; it tries again in a minute (↻ now).")
+        : div().px(14).py(4).text_size(fs.meta).text_color(t.ansi1).child(this.error)))
       .child(v_flex().flex_1().min_h(0).child(list))
       .child(kit(t).footer([[["↑", "↓"], "move"], [["↵"], "open"], ...(overlay ? [[["Esc"], "close"]] : [])])))));
   }
