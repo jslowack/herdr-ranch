@@ -457,7 +457,7 @@ export default class PullRequests extends View {
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
         keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"],
-          ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Review with agent"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
+          ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Agent review"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
       });
     } catch (e) { return div().p(14).text_color(t.ansi1).child(`Cannot show this pull request: ${e?.stack ?? e}`); }
   }
@@ -495,7 +495,7 @@ export default class PullRequests extends View {
   }
 
   // A stack's own row: the chevron (collapses its layers), the stack icon, its name (the bottom
-  // layer's title) and Review with agent. The layers under it show their own status. The
+  // layer's title) and Agent review. The layers under it show their own status. The
   // actions always show: Herdr runs no script on hover, so they can't appear only then.
   stackRow(i, s) {
     // One button, as on a pull request's page; it needs this repository's main checkout.
@@ -503,7 +503,7 @@ export default class PullRequests extends View {
     const actions = div().id(`${st.key}-agent`).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
       .border_color(local ? t.ansi2 : t.border).text_color(local ? t.ansi2 : t.muted)
       .when(local, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => this.startStack(st)))
-      .child("Review with agent");
+      .child("Agent review");
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
       .on_click((_e, cx) => this.toggleStack(st, cx)).child(i.open ? "▾" : "▸");
     const pill = icon("stack", t.ansi4);
