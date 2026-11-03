@@ -169,3 +169,7 @@ test("prompts: stack-fix uses gh stack and never merges", () => {
   const t = DEFAULTS["stack-fix"];
   for (const s of ["gh stack checkout {top}", "gh stack rebase --upstack", "gh stack push", "Never merge"]) assert.ok(t.includes(s), s);
 });
+
+test("prompts: stack-fix says what to do with a layer checked out in another worktree", () => {
+  assert.match(DEFAULTS["stack-fix"], /checked out in another worktree/);
+});

@@ -365,6 +365,7 @@ export default class PullRequests extends View {
 
   // One agent on a whole stack, opened on the picked mode. Without gh stack, Fix says how to get it.
   startStack(stack, mode) {
+    if (!this.where?.repo) return;
     if (mode === "stack-fix" && this.ghStack === false) {
       notify({ title: "Needs gh stack", body: "Install it with: gh extension install github/gh-stack", level: "info", timeout: 6000 });
       return;
@@ -497,24 +498,25 @@ export default class PullRequests extends View {
   // layer's title), where it merges, what blocks it, and the two agent actions. The actions
   // always show: Herdr runs no script on hover, so they can't appear only then.
   stackRow(i, s) {
-    const t = s.t, st = i.stack, ready = st.blocker === "ready to merge", fixOk = this.ghStack !== false;
-    const button = (id, label, primary, enabled, click) => div().id(id).px(8).py(1).flex_none().rounded(6).cursor_pointer().text_size(fs.meta).border_1()
+    // An agent needs this repository's main checkout (like Review with agent on a page); narrow, the labels are short.
+    const t = s.t, st = i.stack, ready = st.blocker === "ready to merge", local = Boolean(this.where?.repo), fixOk = local && this.ghStack !== false;
+    const button = (id, label, primary, enabled, click) => div().id(id).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
       .border_color(primary && enabled ? t.ansi2 : t.border).text_color(!enabled ? t.muted : primary ? t.ansi2 : t.foreground)
-      .hover((x) => x.bg(t.hover)).on_click((_e, cx) => click(cx)).child(label);
+      .when(enabled || this.ghStack === false, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click((_e, cx) => click(cx))).child(label);
     const actions = h_flex().flex_none().gap(4)
-      .child(button(`${st.key}-review`, "Review stack", false, true, () => this.startStack(st, "stack-review")))
-      .child(button(`${st.key}-fix`, fixOk ? "Fix stack to merge" : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
+      .child(button(`${st.key}-review`, s.two ? "Review" : "Review stack", false, local, () => this.startStack(st, "stack-review")))
+      .child(button(`${st.key}-fix`, !local || this.ghStack !== false ? (s.two ? "Fix" : "Fix stack to merge") : "Needs gh stack", true, fixOk, () => this.startStack(st, "stack-fix")));
     const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
       .on_click((_e, cx) => this.toggleStack(st.key, cx)).child(i.open ? "▾" : "▸");
     const pill = div().px(6).py(1).flex_none().rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t.ansi4).child("stack");
     const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
     const into = div().flex_none().text_size(fs.meta).text_color(t.dim).child(`${st.layers.length} PRs into ${st.trunk}`);
-    const blocker = div().flex_none().text_size(fs.meta).text_color(ready ? t.ansi2 : t.ansi1).child(st.blocker);
+    const blocker = div().text_size(fs.meta).text_color(ready ? t.ansi2 : t.ansi1).when(s.two, (e) => e.flex_1().min_w(0).truncate()).when(!s.two, (e) => e.flex_none()).child(st.blocker);
     const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
-    // Narrow: the name on the first line, where it merges, the blocker and the actions on the second.
+    // Narrow (the side panel): the name and where it merges first, then the blocker (cut to fit) and short actions.
     if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
-      .child(h_flex().gap(8).items_center().child(chevron).child(pill).child(name))
-      .child(h_flex().pl(22).gap(8).items_center().child(into).child(blocker).child(div().flex_1()).child(actions));
+      .child(h_flex().gap(8).items_center().child(chevron).child(pill).child(name).child(into))
+      .child(h_flex().pl(22).gap(8).items_center().child(blocker).child(actions));
     return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(into).child(blocker).child(actions);
   }
 

@@ -136,3 +136,13 @@ test("stackAgent: branches and tabs", async () => {
   assert.equal(a.key, "3 PRs");
   assert.equal(a.title, "PR 1");
 });
+
+test("ghStack: a missing extension is asked again, so installing it counts on the next refresh", async () => {
+  let installed = false;
+  state.exec = () => ({ code: 0, stdout: installed ? "gh stack\tgithub/gh-stack\tv0.1.0\n" : "", stderr: "" });
+  try {
+    assert.equal(await hasGhStack({ cwd: "/repo", on: "m4" }), false);
+    installed = true;
+    assert.equal(await hasGhStack({ cwd: "/repo", on: "m4" }), true);
+  } finally { state.exec = null; }
+});

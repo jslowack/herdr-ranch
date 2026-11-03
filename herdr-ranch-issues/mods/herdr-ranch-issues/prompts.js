@@ -96,7 +96,7 @@ What blocks the merge:
 
 Use the gh stack extension, always non-interactively (\`gh stack view --json\`, never the plain TUI).
 
-1. Check out the stack: \`gh stack checkout {top}\`. If another local stack claims these branches, run \`gh stack unstack --local\` first. If this isn't a gh stack yet, adopt its branches: \`git fetch origin\`, then \`gh stack init --base {trunk} <the branches, bottom first>\`.
+1. Check out the stack: \`gh stack checkout {top}\`. If another local stack claims these branches, run \`gh stack unstack --local\` first. If this isn't a gh stack yet, adopt its branches: \`git fetch origin\`, then \`gh stack init --base {trunk} <the branches, bottom first>\`. If a layer's branch is already checked out in another worktree (git refuses to check it out here), stop and tell me which branch and which worktree, so I can free it; don't work around it.
 2. Fix the blockers from the bottom layer up: failing checks (\`gh pr checks <number>\`, then \`gh run view <run> --log-failed\`) and review comments (\`gh api repos/{repo}/pulls/<number>/comments\`), each with a focused commit on that layer's branch.
 3. After changing a layer, run \`gh stack rebase --upstack\`, then the tests of the layers above.
 4. Push with \`gh stack push\`.

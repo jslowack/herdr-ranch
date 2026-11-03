@@ -31,7 +31,7 @@ export async function me(where) {
 // fields), and keeping them makes every render slow enough for the app to interrupt it.
 function slim(pr, login) {
   const s = {
-    number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName,  baseRefName: pr.baseRefName ?? "",
+    number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName, baseRefName: pr.baseRefName ?? "",
     isDraft: pr.isDraft, reviewDecision: pr.reviewDecision, reviewRequests: (pr.reviewRequests ?? []).map((r) => ({ login: r.login })),
     checks: checks(pr.statusCheckRollup), additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
     fork: Boolean(pr.isCrossRepository),
@@ -142,10 +142,13 @@ export function hash(text) {
 
 export const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
 
-// Whether the gh stack extension is installed, asked once per machine. Fix stack to merge needs it.
-const stackExt = new Map();
+// Whether the gh stack extension is installed. Fix stack to merge needs it. Only a yes is kept
+// (per machine): after "Needs gh stack" someone installs it, and the next refresh must see that.
+const stackExt = new Set();
 export async function hasGhStack(where) {
   const k = where.on ?? "";
-  if (!stackExt.has(k)) stackExt.set(k, gh(["extension", "list"], where).then((out) => out.includes("gh-stack"), () => false));
-  return stackExt.get(k);
+  if (stackExt.has(k)) return true;
+  const has = await gh(["extension", "list"], where).then((out) => out.includes("gh-stack"), () => false);
+  if (has) stackExt.add(k);
+  return has;
 }
