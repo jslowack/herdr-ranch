@@ -2,7 +2,7 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
-## Unreleased
+## v0.4.0
 
 - **Reviews:** a review opens as a tab of its own in the shown space instead of a modal dialog; opening it again selects that tab. The cog's **Shows in** setting switches it back to **Modal**.
 - **Reviews:** one review per document. Asking again for the same file (or the same agent's last message) replaces the open review: the list shows one row, the tab or dialog already open switches to the newest version, and unsent comments move over (a comment whose block is gone becomes a general one). The replaced `ranch-review` prints "A newer review of the same document replaced this one." Older duplicates are cleaned up the same way.
