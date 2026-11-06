@@ -334,7 +334,10 @@ const renderDiagram = (kind, input, key, theme = "") => {
     const w = Math.round(Math.min(720, pw)), h = Math.round((ph * w) / pw);
     return { rel, w, h };
   })();
+  // Shared only while it runs: a later call checks the PNG again, so a diagram renders again after
+  // prune removed its PNG, and a failure is tried again (say, once mmdc is installed).
   rendering.set(key, job);
+  job.finally(() => rendering.delete(key)).catch(() => null);
   return job;
 };
 
