@@ -51,6 +51,30 @@ Read what your agent wrote, comment on it in Herdr, and send the comments back t
 
 More in [the guide](docs/guide.md#reviews).
 
+## History
+
+The git commit history of the repository you're in, next to Files and Changes: by day, searchable across the whole history (`author:`, `path:`, `code:`, `since:`, a sha), and each commit's changes as diffs, unified or split. Only `git`, read only. See its [RECIPE.md](herdr-ranch-history/RECIPE.md).
+
+## Changes
+
+The uncommitted changes of the repository you're in, behind the tab bar's **Changes** button in the mod-buttons layout: every file as a card with its diff, unified or split and syntax highlighted, and a commit box. See its [RECIPE.md](herdr-ranch-changes/RECIPE.md).
+
+## Files
+
+Herdr's Files panel with syntax colors from `ranch-highlight`, behind the tab bar's **Files** button in the mod-buttons layout; **Editor** switches to Herdr's own editor. See its [RECIPE.md](herdr-ranch-files/RECIPE.md).
+
+## Spaces
+
+Herdr's spaces list with git and links, in the sidebar of the mod-buttons layout: each space's branch and ahead/behind, worktree spaces under their repository's space, and the repository's other worktrees (a click opens a space there). The shown space has **Link space** and **New worktree** buttons; a linked space shows its Jira, Linear or GitHub link as a chip that opens Link space. Right-click a space for Link space, New, Open and Remove worktree, Rename and Close. Every checkout shows its outstanding work (`●` uncommitted files, `↑` unpushed commits); right-click a worktree without a space to create a space there or delete it. **New worktree** starts from a branch or from one of your issues. See its [RECIPE.md](herdr-ranch-spaces/RECIPE.md).
+
+## Agents
+
+Herdr's agents list with Claude Code's own records, in the sidebar of the mod-buttons layout: the context each Claude Code agent uses, a popup with its model, usage, tasks and subagents, and its task list and running subagents under its row. See its [RECIPE.md](herdr-ranch-agents/RECIPE.md).
+
+## Highlighting
+
+The diffs in Pull requests and History are syntax highlighted by `ranch-highlight`, a small tree-sitter helper in Rust (`ranch-highlight/`): CFML (with cfscript, `<cfquery>` SQL and embedded HTML, CSS and JS) and 19 other common languages. `install.sh` builds it when Rust is installed ([rustup.rs](https://rustup.rs)); without it the diffs stay plain.
+
 ## The mod-buttons layout
 
 ![mod-buttons: a tab-bar button for every mod that wants one](mod-buttons/preview.png)
