@@ -6,17 +6,23 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, hasGhStack, TRANSIENT, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { me, list, mentioned, hasGhStack, TRANSIENT, view, files, commits, commitFiles, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { fileKey, FIRST_LINES, MORE_LINES } from "./diff.js";
+import { highlightFiles } from "./highlight.js";
 import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
+import { REFRESH_ICON } from "./links.js";
 import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, loadAvatars, avatarPics } from "./links.js";
 
 const SPINNER = "mods/workspace-chrome/spinner.svg", COG = "mods/workspace-chrome/settings.svg";
 const WEEK = 7 * 24 * 3600 * 1000, WIDE = 720, ROOMY = 520, PAGES = 30;
+// Lines of diff the Files tab opens by itself, and what Expand all opens at most.
+const OPEN_LINES = 800, ALL_LINES = 2500;
+const savedDiffMode = () => { try { return localStorage.getItem("diff-mode") === "split" ? "split" : "unified"; } catch { return "unified"; } };
 
 // The last list per space, so switching back shows it at once while it refreshes.
 const remembered = (space) => { try { return JSON.parse(localStorage.getItem(`space:${space}`) ?? "null"); } catch { return null; } };
@@ -61,6 +67,7 @@ export default class PullRequests extends View {
     this.prs = []; this.login = null; this.error = null; this.loading = false;
     this.query = ""; this.filter = null; this.mentions = null; this.mentionsVersion = 0; this.open = null; this.page = null; this.pageError = null; this.width = lastWidth(); this.version = 0;
     this.gen = 0; this.data = new Map(); this.hay = new Map(); this.stacks = []; this.inStack = new Map(); this.collapsed = new Set(); this.saved = null; this.versions = 0; this.kept = new Map();
+    this.diffMode = savedDiffMode();
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     // The open pull request's page is a view of its own: a live change redraws the list only,
@@ -81,7 +88,7 @@ export default class PullRequests extends View {
   pageOnly(p, cx) {
     this.prs = p.prs ?? []; this.where = p.where ?? null; this.login = p.login ?? null; this.pages = new Map(); this.page = null; this.pageError = null; this.pageW = 900;
     for (const l of p.avatars ?? []) avatarPics.add(l);
-    this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation";
+    this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation"; this.diffMode = savedDiffMode();
     this.handle = cx.focus_handle();
     // Focus can't move inside a render, so right after: Up/Down then reach the dialog.
     cx.timer.after(0, () => { try { this.handle.focus(); } catch { /* the pointer still works */ } });
@@ -220,7 +227,8 @@ export default class PullRequests extends View {
   }
 
   // The filters, like GitHub's: Assigned to me, Created by me, Mentioned, Review requests
-  // (asked of me directly) and Recent activity (updated in the last 7 days). None: all.
+  // (asked of me directly), Recent activity (updated in the last 7 days) and Pushed (open, with a
+  // commit in the last 7 days). None: all.
   keep(p) {
     const me = this.login;
     if (this.filter === "created") return p.author?.login === me;
@@ -228,6 +236,7 @@ export default class PullRequests extends View {
     if (this.filter === "mentioned") return Boolean(this.mentions?.has(p.number));
     if (this.filter === "review") return (p.reviewRequests ?? []).some((r) => r.login === me);
     if (this.filter === "recent") return Date.parse(p.updatedAt) > Date.now() - WEEK;
+    if (this.filter === "pushed") return p.state === "OPEN" && Date.parse(p.pushedAt) > Date.now() - WEEK;
     return true;
   }
 
@@ -251,10 +260,11 @@ export default class PullRequests extends View {
   load(number, cx) {
     const where = this.where, still = () => this.open === number && this.where?.github === where.github;
     this.page = this.pages.get(`${where.github}#${number}`) ?? null; this.pageError = null;
+    if (this.page && this.tab !== "conversation" && this.tab !== "checks") this.pickTab(this.tab, cx);
     cx.spawn(async (cx) => {
       try {
         const page = await this.fetchPage(number, where);
-        if (still()) { this.page = page; this.pageError = null; }
+        if (still()) { this.page = page; this.pageError = null; if (this.tab === "files" || this.tab === "commits") this.pickTab(this.tab, cx); }
         const people = [page.author?.login, ...page.conversation.map((c) => c.who), ...(page.reviewers ?? []).map((r) => r.login), ...(page.assignees ?? [])];
         cx.spawn(async (cx) => { if (await loadAvatars(people, page.url)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
       } catch (e) { if (still() && !this.page) this.pageError = String(e?.message ?? e); }
@@ -317,6 +327,14 @@ export default class PullRequests extends View {
       const ws = words(this.query);
       const shown = this.prs.filter((p) => matches(this.hay.get(p.number), ws) && this.keep(p));
       const passing = new Set(shown.map((p) => p.number)), byNumber = new Map(this.prs.map((p) => [p.number, p]));
+      // Pushed: one list, the latest push first, each row aged by its push; no groups or stacks.
+      if (this.filter === "pushed") {
+        const sorted = [...shown].sort((a, b) => Date.parse(b.pushedAt) - Date.parse(a.pushedAt));
+        const items = sorted.length ? [{ key: "group-pushed", group: { label: "Recently pushed", count: String(sorted.length) } },
+          ...sorted.map((pr) => ({ key: `pr-${pr.number}`, data: { ...this.data.get(pr.number), age: ago(pr.pushedAt) } }))] : [];
+        this.cache = { k, items, flat: sorted };
+        return this.cache;
+      }
       // A stack shows whole when any layer passes the search and filter (the others dimmed),
       // as one row in the group of its least ready layer; its layers aren't loose rows.
       const stacks = this.stacks.filter((s) => s.layers.some((l) => passing.has(l.number)));
@@ -416,7 +434,17 @@ export default class PullRequests extends View {
     if (m.platform || m.control || m.alt) return false;
     if (e.key === "o") { openUrl(pr.url); return true; }
     if (e.key === "b") { this.copyBranch(cx); return true; }
-    const tab = { 1: "conversation", 2: "checks", 3: "files" }[e.key];
+    if (this.tab === "commits" && this.commitOpen()) {
+      if (e.key === "[" || e.key === "]") { this.stepCommit(e.key === "[" ? -1 : 1, cx); return true; }
+      if (e.key === "backspace") { this.pickCommit(null, cx); return true; }
+    }
+    if ((this.tab === "files" || (this.tab === "commits" && this.commitOpen())) && (e.key === "s" || e.key === "e")) {
+      const d = this.diffProps();
+      if (e.key === "s") d.setMode(d.mode === "split" ? "unified" : "split", cx);
+      else if (d.files) d.all(!d.files.some((f) => d.isOpen(f.path)), cx);
+      return true;
+    }
+    const tab = { 1: "conversation", 2: "checks", 3: "files", 4: "commits" }[e.key];
     if (tab) { this.pickTab(tab, cx); return true; }
     return false;
   }
@@ -432,7 +460,139 @@ export default class PullRequests extends View {
     goToSpace(id);
   }
 
-  pickTab(tab, cx) { this.tab = tab; cx.notify(this.pageView); }
+  pickTab(tab, cx) {
+    this.tab = tab;
+    if (tab === "files") this.loadDiffs(cx);
+    if (tab === "commits") { this.loadCommits(cx); if (this.commitOpen()) this.loadDiffs(cx); }
+    cx.notify(this.pageView);
+  }
+
+  // What the diff view shows now: the pull request's files (Files tab) or one commit's
+  // (Commits tab, a commit open). `key` names its diffs, and with a path, a file's state.
+  // Only once the page is in: its head commit keys what was marked viewed.
+  diffScope() {
+    const pr = this.page;
+    if (!this.where || !pr || pr.number !== this.open) return null;
+    this.diffs ??= new Map(); this.fileOpen ??= new Map(); this.fileLimit ??= new Map();
+    const where = this.where, github = where.github, number = pr.number;
+    if (this.tab === "commits") {
+      const c = this.commitOpen();
+      return c ? { key: `${github}@${c.sha}`, load: () => commitFiles(c.sha, where), url: `https://github.com/${github}/commit/${c.sha}`, viewed: false, git: this.localGit(`${c.sha}^`, c.sha) } : null;
+    }
+    return { key: fileKey(github, number, pr.headRefOid, ""), load: () => files(number, where), url: `${pr.url}/files`, viewed: true, git: this.localGit(pr.baseRefOid, pr.headRefOid) };
+  }
+  // Where the highlighter can read whole files: this computer's checkout of the repository (it
+  // may lack the commits; the highlighter then works from the hunks).
+  localGit(oldRev, newRev) {
+    const repo = this.where?.repo;
+    return repo?.main && !repo.on && oldRev && newRev ? { cwd: repo.main, oldRev, newRev } : null;
+  }
+  // Diffs load the first time they show (they can be large) and are kept, the last PAGES.
+  loadDiffs(cx, again = false) {
+    const s = this.diffScope();
+    if (!s || (!again && this.diffs.has(s.key))) return;
+    this.diffs.set(s.key, { files: null, error: null });
+    cx.spawn(async (cx) => {
+      let got;
+      try { got = { files: await s.load(), error: null }; } catch (e) { got = { files: null, error: String(e?.message ?? e).split("\n")[0] }; }
+      this.diffs.set(s.key, got);
+      if (this.diffs.size > PAGES) this.diffs.delete(this.diffs.keys().next().value);
+      // Open the first files, up to a budget of lines, and none marked viewed: the rest wait for a click.
+      if (got.files) {
+        let budget = OPEN_LINES;
+        for (const f of got.files) {
+          const k = `${s.key}${f.path}`;
+          if (this.fileOpen.has(k)) continue;
+          const open = !(s.viewed && this.isViewed(k)) && !f.why && Math.min(f.lines, FIRST_LINES) <= budget;
+          if (open) budget -= Math.min(f.lines, FIRST_LINES);
+          this.fileOpen.set(k, open);
+        }
+      }
+      try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+      // Then the colors, when the highlighter is installed: the diff shows plain until they come.
+      if (got.files && await highlightFiles(got.files.filter((f) => !f.why), s.git).catch(() => false)) {
+        try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+      }
+    });
+  }
+  isViewed(k) { try { return localStorage.getItem(`viewed:${k}`) === "1"; } catch { return false; } }
+  diffProps() {
+    const s = this.diffScope();
+    const d = (s && this.diffs.get(s.key)) ?? { files: null, error: null };
+    const loaded = d.files ?? [];
+    const key = (p) => `${s?.key}${p}`;
+    const redraw = (cx) => cx.notify(this.pageView);
+    return {
+      files: d.files, error: d.error, loading: !d.files && !d.error, mode: this.diffMode ?? "unified", viewed: Boolean(s?.viewed),
+      github: s?.url ?? (this.page ?? this.picked)?.url ?? "", openUrl: (url) => openUrl(url),
+      isOpen: (p) => Boolean(this.fileOpen?.get(key(p))),
+      isViewed: (p) => Boolean(s?.viewed) && this.isViewed(key(p)),
+      limit: (p) => this.fileLimit?.get(key(p)) ?? FIRST_LINES,
+      toggle: (p, cx) => { const k = key(p); this.fileOpen.set(k, !this.fileOpen.get(k)); redraw(cx); },
+      // Viewed folds the file away; unmarking it opens it again.
+      view: (p, cx) => {
+        const k = key(p), now = !this.isViewed(k);
+        try { if (now) localStorage.setItem(`viewed:${k}`, "1"); else localStorage.removeItem(`viewed:${k}`); } catch { /* kept for this session only */ }
+        this.fileOpen.set(k, !now); redraw(cx);
+      },
+      more: (p, cx) => { const k = key(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); redraw(cx); },
+      setMode: (m, cx) => { this.diffMode = m; try { localStorage.setItem("diff-mode", m); } catch { /* this session only */ } redraw(cx); },
+      // Expand all opens files with a diff up to a budget of lines, so one click can't draw thousands.
+      all: (open, cx) => {
+        let budget = ALL_LINES;
+        for (const f of loaded) {
+          const k = key(f.path), cost = Math.min(f.lines, this.fileLimit.get(k) ?? FIRST_LINES);
+          const on = open && !f.why && cost <= budget;
+          if (on) budget -= cost;
+          this.fileOpen.set(k, on);
+        }
+        redraw(cx);
+      },
+      retry: (cx) => { this.loadDiffs(cx, true); redraw(cx); },
+    };
+  }
+
+  // The Commits tab: the pull request's commits, loaded the first time the tab shows, kept per
+  // head commit. `this.commit` is the open one's sha, for the pull request `this.commitFor`.
+  commitsKey() { const pr = this.page; return pr && this.where && pr.number === this.open ? fileKey(this.where.github, pr.number, pr.headRefOid, "") : null; }
+  loadCommits(cx, again = false) {
+    const k = this.commitsKey();
+    this.commitLists ??= new Map();
+    if (!k || (!again && this.commitLists.has(k))) return;
+    const where = this.where, number = this.page.number;
+    this.commitLists.set(k, { list: null, total: 0, error: null });
+    cx.spawn(async (cx) => {
+      let got;
+      try { got = { ...(await commits(number, where)), error: null }; } catch (e) { got = { list: null, total: 0, error: String(e?.message ?? e).split("\n")[0] }; }
+      this.commitLists.set(k, got);
+      if (this.commitLists.size > PAGES) this.commitLists.delete(this.commitLists.keys().next().value);
+      try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+    });
+  }
+  commitList() { const k = this.commitsKey(); return (k && this.commitLists?.get(k)) ?? { list: null, total: 0, error: null }; }
+  commitOpen() {
+    if (this.commitFor !== this.open || !this.commit) return null;
+    return this.commitList().list?.find((c) => c.sha === this.commit) ?? null;
+  }
+  pickCommit(sha, cx) { this.commit = sha; this.commitFor = this.open; if (sha) this.loadDiffs(cx); cx.notify(this.pageView); }
+  // [ and ]: the older or newer commit; at either end nothing moves.
+  stepCommit(by, cx) {
+    const list = this.commitList().list ?? [], at = list.findIndex((c) => c.sha === this.commitOpen()?.sha);
+    const next = list[at + by];
+    if (at >= 0 && next) this.pickCommit(next.sha, cx);
+  }
+  commitProps() {
+    const c = this.commitList(), open = this.commitOpen(), list = c.list ?? [], at = open ? list.indexOf(open) : -1;
+    const github = this.where?.github ?? "";
+    return {
+      list: c.list, total: c.total, error: c.error, open, at,
+      pick: (sha, cx) => this.pickCommit(sha, cx), back: (cx) => this.pickCommit(null, cx), step: (by, cx) => this.stepCommit(by, cx),
+      retry: (cx) => { this.loadCommits(cx, true); cx.notify(this.pageView); },
+      copy: (sha, cx) => { cx.write_to_clipboard(sha); notify({ title: `Copied ${sha.slice(0, 7)}`, level: "success", timeout: 2000 }); },
+      url: (sha) => `https://github.com/${github}/commit/${sha}`, openUrl: (url) => openUrl(url),
+      diff: open ? this.diffProps() : null,
+    };
+  }
 
   copyBranch(cx) {
     const b = (this.page ?? this.picked)?.headRefName;
@@ -452,11 +612,12 @@ export default class PullRequests extends View {
       const working = agentSpaces(this.where?.repo?.main).prs.get((page ?? this.picked)?.number) ?? [];
       return detail(page ?? { ...this.picked, loading: true }, t, {
         error: this.pageError, nav, login: this.login, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
-        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation",
+        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation", diff: this.diffProps(), commits: this.commitProps(),
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
-        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"],
+        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3", "4"], "tabs"], ...(this.tab === "files" || (this.tab === "commits" && this.commitOpen()) ? [[["S"], "unified / split"], [["E"], "expand / collapse all"]] : []),
+          ...(this.tab === "commits" && this.commitOpen() ? [[["[", "]"], "older / newer"], [["⌫"], "all commits"]] : []),
           ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Agent review"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
       });
     } catch (e) { return div().p(14).text_color(t.ansi1).child(`Cannot show this pull request: ${e?.stack ?? e}`); }
@@ -563,7 +724,7 @@ export default class PullRequests extends View {
       .border_1().border_color(on ? t.accent : t.border).when(on, (e) => e.bg(t.selected))
       .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { flip(cx); cx.notify(); }).child(label);
     const empty = this.error || (this.loading ? "Loading pull requests…" : this.prs.length ? (this.filter === "mentioned" && this.mentionsLoading ? "Loading…" : "Nothing matches.") : "No open pull requests.");
-    const filters = h_flex().child(segmented("filter", [["assigned", "Assigned"], ["created", "Created"], ["mentioned", "Mentioned"], ["review", "Review requests"], ["recent", "Recent"]], this.filter, (id, cx) => {
+    const filters = h_flex().child(segmented("filter", [["assigned", "Assigned"], ["created", "Created"], ["mentioned", "Mentioned"], ["review", "Review requests"], ["recent", "Recent"], ["pushed", "Pushed"]], this.filter, (id, cx) => {
       this.filter = id;
       if (this.filter === "mentioned" && !this.mentions && !this.mentionsLoading) this.loadMentions(cx);
     }, t));
@@ -617,7 +778,7 @@ export default class PullRequests extends View {
           .child(div().flex_none().font_semibold().child("Pull requests"))
           .child(div().flex_1().min_w(0).text_size(fs.meta).text_color(t.dim).truncate().child(this.loading && this.prs.length ? `${this.where?.github ?? ""} · Refreshing…` : this.where?.github ?? ""))
           .when(wide, (e) => e.child(search.w(220)))
-          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : "↻", (cx) => this.refresh(cx)))
+          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(13), (cx) => this.refresh(cx)))
           .child(iconButton("settings", svg(COG).size(14), () => openSettings("herdr-ranch-prs")))
           .when(Boolean(overlay), (e) => e.child(close)))
         .when(!wide, (e) => e.child(search.w_full()))
