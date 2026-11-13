@@ -14,10 +14,13 @@ globalThis.fetch = async (url, init = {}) => {
   return state.fetch(url, init);
 };
 export const spaces = () => state.spaces;
+export const layout = () => state.layout ?? null;
+export const panes = () => state.panes ?? [];
+export const focused = () => state.focused ?? null;
 export const shared = (k) => state.shared[k];
 export const setShared = (k, v) => { state.shared[k] = v; };
 export const readTextFile = async (p) => state.files[p] ?? null;
-export const writeTextFile = async () => null;
+export const writeTextFile = async (_path, text) => { state.lastWrite = text; return null; };
 export const exec = async (cmd, args) => (state.exec?.(cmd, args)) ?? (cmd === "ls" && state.dirs[args[1]] ? { code: 0, stdout: state.dirs[args[1]].join("\n"), stderr: "" } : { code: 1, stdout: "", stderr: "" });
 export const window = () => ({ platform: state.platform });
 export const appHome = () => "/tmp/herdr-test";
