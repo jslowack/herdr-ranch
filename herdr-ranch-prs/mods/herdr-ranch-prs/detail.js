@@ -8,6 +8,8 @@ import { v_flex, h_flex, TextView } from "gpui-base";
 import { ago } from "./data.js";
 import { fs, icon, kindColor, liveAgent, AGENT_STATUS, imagesAsLinks, openUrl } from "./links.js";
 import { kit, pageLayout } from "./page-kit.js";
+import { filesTab as filesView } from "./files-tab.js";
+import { commitsTab } from "./commits-tab.js";
 
 const VERDICT = { APPROVED: ["approved", "check", "ansi2"], CHANGES_REQUESTED: ["changes requested", "x", "ansi1"], COMMENTED: ["commented", "comment", "muted"], DISMISSED: ["dismissed", "x", "dim"], REQUESTED: ["requested", "pending", "ansi3"] };
 const KEY = /(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{1,19}-\d+(?![0-9])/g;
@@ -42,7 +44,8 @@ export function prepare(pr) {
 
 // `pr` is a prepared page, or the list's row (`loading: true`) until the page arrives: the
 // header shows at once and the rest says it is loading. `a`: { error, nav, open, review,
-// copyBranch, tab, pickTab, wide, login, jira (site), jiraIssues, keys (footer) }.
+// copyBranch, tab, pickTab, wide, login, jira (site), jiraIssues, keys (footer), diff (the
+// Files tab's state and actions, see files-tab.js), commits (the Commits tab's, see commits-tab.js) }.
 export function detail(pr, t, a) {
   const k = kit(t), loading = Boolean(pr.loading);
   const state = pr.state === "MERGED" ? ["Merged", "merged", t.ansi5] : pr.state === "CLOSED" ? ["Closed", "closed", t.ansi1]
@@ -99,14 +102,8 @@ export function detail(pr, t, a) {
       .child(div().flex_1().min_w(0).truncate().child(c.name))
       .child(div().text_color(t.dim).child(c.label))))
     : div().text_color(t.dim).child("No checks ran on this pull request.")];
-  const filesTab = () => [files.length
-    ? v_flex().rounded(8).border_1().border_color(t.border).overflow_hidden().children(files.map((f, i) => h_flex().id(`file-${i}`).gap(8).items_center().px(12).py(5)
-      .when(i > 0, (e) => e.border_t_1().border_color(t.border)).text_size(fs.meta)
-      .child(div().flex_1().min_w(0).truncate().font_family("Menlo").child(f.path))
-      .child(div().flex_none().text_color(t.ansi2).child(`+${f.additions}`))
-      .child(div().flex_none().w(44).text_right().text_color(t.ansi1).child(`−${f.deletions}`))))
-      .when(pr.changedFiles > files.length, (e) => e.child(div().text_size(fs.meta).text_color(t.dim).child(`${pr.changedFiles - files.length} more files are on GitHub.`)))
-    : div().text_color(t.dim).child("No files.")];
+  // The diffs (files-tab.js): the page's file list until they load.
+  const filesTab = () => filesView(files, t, k, a.diff, (pr.changedFiles ?? 0) - (a.diff.files ?? files).length);
 
   const people = (logins) => (logins?.length ? v_flex().gap(5).children(logins.map((l) => k.person(l))) : div().text_size(fs.meta).text_color(t.dim).child("Nobody"));
   const issues = [
@@ -153,9 +150,9 @@ export function detail(pr, t, a) {
       .child(pr.state === "MERGED" ? `merged ${commits}` : `wants to merge ${commits}`).when(Boolean(pr.baseRefName), (e) => e.child("into").child(k.code(pr.baseRefName)))
       .child("from").child(k.code(pr.headRefName ?? ""))
       .child(div().id("copy-branch").cursor_pointer().rounded(4).p(2).hover((s) => s.bg(t.hover)).on_click((_e, cx) => a.copyBranch(cx)).child(icon("copy", t.muted, 13))),
-    tabs: k.tabs(tab, [["conversation", "Conversation", loading ? null : pr.commentCount], ["checks", "Checks", loading ? null : checks.length], ["files", "Files", loading ? null : pr.changedFiles ?? files.length]], a.pickTab),
+    tabs: k.tabs(tab, [["conversation", "Conversation", loading ? null : pr.commentCount], ["checks", "Checks", loading ? null : checks.length], ["files", "Files", loading ? null : pr.changedFiles ?? files.length], ["commits", "Commits", loading ? null : a.commits?.total || pr.commitCount]], a.pickTab),
     main: loading ? [div().p(10).text_color(a.error ? t.ansi1 : t.dim).child(a.error ?? "Loading the description, checks and conversation…")]
-      : tab === "checks" ? checksTab() : tab === "files" ? filesTab() : conversationTab(),
+      : tab === "checks" ? checksTab() : tab === "files" ? filesTab() : tab === "commits" ? commitsTab(t, k, a.commits) : conversationTab(),
     side,
     footer: k.footer(a.keys),
   });
