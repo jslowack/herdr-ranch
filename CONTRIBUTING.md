@@ -1,6 +1,36 @@
 # Contributing
 
-Thanks for looking. Issues and pull requests are welcome at [jslowack/herdr-ranch](https://github.com/jslowack/herdr-ranch).
+Thanks for looking. Issues and pull requests are welcome at [jslowack/herdr-ranch](https://github.com/jslowack/herdr-ranch). One person maintains this in their spare time, so the rules below keep the queue small and the review fast.
+
+By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Report a security problem privately, as [SECURITY.md](SECURITY.md) explains.
+
+## Issue first, then a pull request
+
+1. **Open an issue** with the Bug or Idea form. It gets the `triage` label.
+2. **Wait for triage.** The maintainer answers, and removes `triage` when the change is wanted. An issue can also close as `wontfix` or `duplicate`.
+3. **Open a pull request** that says `Closes #<issue>`. Fixing a typo or a broken link needs no issue.
+
+A pull request with no accepted issue may be closed without review. That isn't a judgment of the work: it protects your time.
+
+## How a pull request moves
+
+1. **Triage.** A pull request from someone outside the repository starts in triage: its checks don't run until the maintainer has read the diff and clicks **Approve and run workflows**. CI runs the code in the pull request, so the maintainer reads changes to `.github/`, `install.sh` and `tests/package.json` with extra care.
+2. **Checks.** `test`, `install (ubuntu-latest)` and `install (macos-latest)` must pass before a merge.
+3. **Review.** Expect an answer within a week. Answer the comments with new commits; don't force-push during a review.
+4. **Merge.** The maintainer squash-merges with a [Conventional Commits](https://www.conventionalcommits.org) title, such as `fix(issues): keep the filter after a refresh`.
+
+A pull request that waits on its author for 30 days is closed. Reopen it when you're back.
+
+## Rules
+
+- **One change per pull request.** A fix and a refactor are two pull requests.
+- **Tests for logic.** New or changed logic gets a test in `tests/`.
+- **Docs move with the code.** Update the mod's `RECIPE.md`, `docs/` and `CHANGELOG.md` when users notice the change.
+- **Read only.** The mods don't write to Jira, Linear or GitHub. A change that adds a write needs an issue that agrees to it first.
+- **No secrets.** Tokens only in the system's credential store or environment variables. Never commit a token, a real issue's content, or a screenshot that shows either.
+- **No new dependencies** in a mod without an issue that agrees to it. A mod runs inside Herdr, with no install step.
+- **AI agents are welcome, you're still the author.** Say in the pull request that you used one. Read, run and understand every line before you ask for a review.
+- **Your contribution is MIT licensed,** like the rest of the repository.
 
 ## How the repository is laid out
 

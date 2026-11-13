@@ -1,0 +1,36 @@
+name: Bug
+description: Something in a mod or in install.sh doesn't work.
+labels: [bug, triage]
+body:
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      options: [Issues, Pull requests, Reviews, mod-buttons, install.sh, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open Issues in a space linked to Jira\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The Herdr Ranch version (the cog in Issues), `herdr-app --version` and your OS.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove tokens and private issue content first.
